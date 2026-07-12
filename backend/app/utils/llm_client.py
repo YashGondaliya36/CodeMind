@@ -5,20 +5,20 @@ Single place for ALL LLM calls in the project.
 Swap the model or provider here without touching any other file.
 """
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.config import settings
 
 
-def _get_model() -> genai.GenerativeModel:
-    """Lazily configure and return a Gemini GenerativeModel instance."""
+def _get_client() -> genai.Client:
+    """Lazily configure and return a Gemini GenAI Client instance."""
     if not settings.GEMINI_API_KEY:
         raise ValueError(
             "GEMINI_API_KEY is not set. "
             "Copy .env.example → .env and add your key."
         )
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    return genai.GenerativeModel(settings.GEMINI_MODEL)
+    return genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 def generate_text(prompt: str, temperature: float = 0.2) -> str:
@@ -37,10 +37,11 @@ def generate_text(prompt: str, temperature: float = 0.2) -> str:
         RuntimeError: If the API call fails.
     """
     try:
-        model = _get_model()
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(temperature=temperature),
+        client = _get_client()
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=temperature),
         )
         return response.text.strip()
     except Exception as e:
@@ -56,8 +57,11 @@ def count_tokens(text: str) -> int:
         Approximate token count (Gemini tokenizer).
     """
     try:
-        model = _get_model()
-        result = model.count_tokens(text)
+        client = _get_client()
+        result = client.models.count_tokens(
+            model=settings.GEMINI_MODEL,
+            contents=text,
+        )
         return result.total_tokens
     except Exception:
         # Fallback: rough estimation (1 token ≈ 4 chars)

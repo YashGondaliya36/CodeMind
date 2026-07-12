@@ -1,31 +1,31 @@
 # ── Core Framework ──────────────────────────────────────────────
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-python-dotenv==1.0.1
+fastapi
+uvicorn[standard]
+python-dotenv
 
-# ── Pydantic (FastAPI uses this internally, pin v2) ─────────────
-pydantic==2.7.1
-pydantic-settings==2.3.0
+# ── Pydantic ─────────────
+pydantic
+pydantic-settings
 
-# ── LLM Client ──────────────────────────────────────────────────
-google-generativeai==0.7.2
+# ── LLM Client ────────────
+google-genai
 
-# ── Git / Repo handling ─────────────────────────────────────────
-gitpython==3.1.43
+# ── Git / Repo handling ───────────────
+gitpython
 
-# ── Markdown / YAML parsing ──────────────────────────────────────
-PyYAML==6.0.1
-python-frontmatter==1.1.0
+# ── Markdown / YAML parsing ─────────────
+PyYAML
+python-frontmatter
 
-# ── AST & Code Parsing ──────────────────────────────────────────
+# ── AST & Code Parsing ───────────────
 # Built-in `ast` module used for Python files — no extra dep needed
 
-# ── Knowledge Graph ─────────────────────────────────────────────
-networkx==3.3
+# ── Knowledge Graph ───────────────
+networkx
 
-# ── HTTP client (for GitHub API calls) ──────────────────────────
-httpx==0.27.0
+# ── HTTP client ──────────
+httpx
 
-# ── Utilities ───────────────────────────────────────────────────
-python-multipart==0.0.9
-aiofiles==23.2.1
+# ── Utilities ───────────────
+python-multipart
+aiofiles
