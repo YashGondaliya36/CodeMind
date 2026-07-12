@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.core.bundle.index_builder import append_to_log, build_index
+from app.core.bundle.graph_builder import build_graph
 from app.core.bundle.manager import delete_bundle, list_repos
 from app.core.producer.crawler import crawl_repo
 from app.core.producer.okf_writer import write_okf_file
@@ -108,9 +109,10 @@ def _run_analysis(job_id: str, request: AnalyzeRequest) -> None:
                 # Don't abort the whole job for one bad file — log and continue
                 print(f"[WARN] Skipping {crawled_file.relative_path}: {e}")
 
-        # ── Step 6: Build index.md + log entry ───────────────────────────────
-        _update_job(job_id, status="indexing", message="Building index.md…", progress=92)
+        # ── Step 6: Build index.md + graph.json + log entry ───────────────────────────────
+        _update_job(job_id, status="indexing", message="Building index.md and graph.json…", progress=92)
         build_index(request.repo_name)
+        build_graph(request.repo_name)
         append_to_log(
             request.repo_name,
             f"Bundle created from `{request.source}` "

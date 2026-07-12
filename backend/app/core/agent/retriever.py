@@ -77,8 +77,8 @@ def retrieve_relevant_files(
     # Step 1: Get all metadata (fast — no full reads)
     all_meta = scan_all_metadata(repo_name)
 
-    # Filter out system files
-    all_meta = [m for m in all_meta if m.filename not in ("index.md", "log.md")]
+    # Filter out log files but keep index.md if we need it
+    all_meta = [m for m in all_meta if m.filename not in ("log.md",)]
 
     if not all_meta:
         return []
@@ -87,16 +87,25 @@ def retrieve_relevant_files(
     keywords = _extract_keywords(question)
     scored = [
         ScoredFile(meta=m, score=_score_file(m, keywords))
-        for m in all_meta
+        for m in all_meta if m.filename != "index.md" # Don't score index.md directly to avoid bias
     ]
 
     # Step 3: Sort by score descending, apply min_score filter
     scored.sort(key=lambda s: s.score, reverse=True)
     filtered = [s for s in scored if s.score > min_score]
 
-    # If no files pass the threshold, take the top 2 regardless
+    # If no specific files match (e.g. global question like "what is this project about"), 
+    # explicitly fallback to the Master Index instead of random files!
     if not filtered:
-        filtered = scored[:2]
+        # Create a dummy ScoredFile for index.md
+        index_meta = OKFFileMeta(
+            filename="index.md",
+            title="Master Project Index",
+            description="Global overview of all files in the project",
+            type="index",
+            tags=["global", "overview", "project"]
+        )
+        filtered = [ScoredFile(meta=index_meta, score=0.1)]
 
     top = filtered[:max_files]
 
