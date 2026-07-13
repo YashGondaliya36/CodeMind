@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     Use this to initialise resources: DB pools, warm-up caches, etc.
     """
     # Startup
-    print(f"🚀  CodeMind backend starting — env={settings.APP_ENV}")
+    print(f"[*] CodeMind backend starting — env={settings.APP_ENV}")
     _ensure_directories()
     yield
     # Shutdown

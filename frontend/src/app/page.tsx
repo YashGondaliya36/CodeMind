@@ -1,12 +1,25 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { BrutalistCard, BrutalistCardContent, BrutalistCardHeader, BrutalistCardTitle } from "@/components/ui/BrutalistCard"
 import { RepoAnalyzer } from "@/components/dashboard/RepoAnalyzer"
 import { FileExplorer } from "@/components/dashboard/FileExplorer"
 import { ChatInterface } from "@/components/dashboard/ChatInterface"
+import Link from "next/link";
 
-export default function Dashboard() {
-  const [activeRepo, setActiveRepo] = useState<string | null>(null);
+function DashboardContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const repoFromUrl = searchParams.get("repo");
+
+  const [activeRepo, setActiveRepo] = useState<string | null>(repoFromUrl);
+
+  // Sync state to URL without reloading
+  useEffect(() => {
+    if (activeRepo && activeRepo !== repoFromUrl) {
+      router.replace(`/?repo=${activeRepo}`);
+    }
+  }, [activeRepo, repoFromUrl, router]);
 
   return (
     <main className="min-h-screen p-8 max-w-[1600px] mx-auto">
@@ -59,12 +72,12 @@ export default function Dashboard() {
             <BrutalistCardHeader className="flex flex-row items-center justify-between">
               <BrutalistCardTitle>3. CODEMIND AGENT</BrutalistCardTitle>
               {activeRepo && (
-                <a 
+                <Link 
                   href={`/graph?repo=${activeRepo}`}
                   className="font-mono text-xs bg-brutal-orange px-3 py-1 border-2 border-black font-bold hover:bg-brutal-white transition-colors"
                 >
                   OPEN KNOWLEDGE GRAPH &rarr;
-                </a>
+                </Link>
               )}
             </BrutalistCardHeader>
             <BrutalistCardContent className="flex-1 pt-6 overflow-hidden">
@@ -76,5 +89,13 @@ export default function Dashboard() {
 
       </div>
     </main>
+  )
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen p-8 max-w-[1600px] mx-auto font-mono text-xl">Loading CodeMind...</div>}>
+      <DashboardContent />
+    </Suspense>
   )
 }

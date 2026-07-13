@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { BrutalistButton } from "@/components/ui/BrutalistButton";
 import { askQuestion, ChatResponse, ChatSource } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 interface ChatMessage {
   role: "user" | "agent";
@@ -19,6 +20,29 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // Load chat history on mount or repo change
+  useEffect(() => {
+    if (repoName) {
+      const saved = localStorage.getItem(`chat_${repoName}`);
+      if (saved) {
+        try {
+          setMessages(JSON.parse(saved));
+        } catch (e) {
+          console.error("Failed to parse chat history");
+        }
+      } else {
+        setMessages([]); // Reset for new repo
+      }
+    }
+  }, [repoName]);
+
+  // Save chat history on update
+  useEffect(() => {
+    if (repoName && messages.length > 0) {
+      localStorage.setItem(`chat_${repoName}`, JSON.stringify(messages));
+    }
+  }, [messages, repoName]);
 
   const handleSend = async () => {
     if (!input.trim() || !repoName) return;
@@ -97,43 +121,60 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
             <p className="text-xs">Ask me anything about the {repoName} codebase.</p>
           </div>
         ) : (
-          [...messages].reverse().map((msg, i) => (
-            <div key={i} className={`flex flex-col shrink-0 ${msg.role === "user" ? "items-end" : "items-start"}`}>
-              
-              <div className={`
-                max-w-[85%] border-2 border-brutal-black p-3 shadow-brutal-sm
-                ${msg.role === "user" ? "bg-brutal-gray text-brutal-black" : "bg-brutal-green text-brutal-black"}
-              `}>
-                <span className="block text-[10px] font-bold mb-2 uppercase opacity-60">
-                  {msg.role === "user" ? "YOU" : "CODEMIND"}
-                </span>
+          (() => {
+            const pairs = [];
+            for (let i = 0; i < messages.length; i++) {
+              if (messages[i].role === "user") {
+                pairs.push({ user: messages[i], agent: messages[i + 1] });
+              }
+            }
+            return pairs.reverse().map((pair, idx) => (
+              <div key={idx} className="flex flex-col gap-4">
                 
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {msg.content}
-                </p>
+                {/* USER MESSAGE */}
+                <div className="flex flex-col shrink-0 items-end">
+                  <div className="max-w-[85%] border-2 border-brutal-black p-3 shadow-brutal-sm bg-brutal-green text-brutal-black">
+                    <span className="block text-[10px] font-bold mb-2 uppercase opacity-60">YOU</span>
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{pair.user.content}</p>
+                  </div>
+                </div>
 
-                {/* Agent Metrics & Sources */}
-                {msg.role === "agent" && msg.sources && (
-                  <div className="mt-4 pt-3 border-t-2 border-brutal-black/20">
-                    <div className="flex gap-4 text-[10px] font-bold mb-2 uppercase">
-                      <span>FILES SCANNED: {msg.metrics?.scanned || 0}</span>
-                      {msg.metrics?.tokens && <span>TOKENS: {msg.metrics.tokens}</span>}
-                    </div>
-                    {msg.sources.length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold">Sources Used:</span>
-                        {msg.sources.map((s, idx) => (
-                          <div key={idx} className="bg-brutal-white/50 border border-brutal-black p-1 text-[10px] truncate">
-                            📄 {s.filename} <span className="opacity-50">({Math.round(s.relevance_score * 100)}%)</span>
-                          </div>
-                        ))}
+                {/* AGENT MESSAGE */}
+                {pair.agent && (
+                  <div className="flex flex-col shrink-0 items-start w-full">
+                    <div className="w-full border-2 border-brutal-black p-5 shadow-brutal-sm bg-brutal-gray text-brutal-black">
+                      <span className="block text-[10px] font-bold mb-3 uppercase opacity-60">CODEMIND</span>
+                      
+                      {/* Render Markdown! */}
+                      <div className="text-sm leading-relaxed prose prose-sm max-w-none prose-headings:font-black prose-headings:uppercase prose-a:text-brutal-orange prose-a:font-bold prose-code:bg-brutal-white prose-code:px-1 prose-code:border prose-code:border-brutal-black prose-pre:bg-brutal-white prose-pre:text-brutal-black prose-pre:border-2 prose-pre:border-brutal-black">
+                        <ReactMarkdown>{pair.agent.content}</ReactMarkdown>
                       </div>
-                    )}
+                      
+                      {pair.agent.sources && (
+                        <div className="mt-4 pt-3 border-t-2 border-brutal-black/20">
+                          <div className="flex gap-4 text-[10px] font-bold mb-2 uppercase">
+                            <span>FILES SCANNED: {pair.agent.metrics?.scanned || 0}</span>
+                            {pair.agent.metrics?.tokens && <span>TOKENS: {pair.agent.metrics.tokens}</span>}
+                          </div>
+                          {pair.agent.sources.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold">Sources Used:</span>
+                              {pair.agent.sources.map((s, sIdx) => (
+                                <div key={sIdx} className="bg-brutal-white/50 border border-brutal-black p-1 text-[10px] truncate">
+                                  📄 {s.filename} <span className="opacity-50">({Math.round(s.relevance_score * 100)}%)</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
+                
               </div>
-            </div>
-          ))
+            ));
+          })()
         )}
       </div>
     </div>

@@ -13,7 +13,7 @@ export default function GraphPage({ searchParams }: { searchParams: { repo?: str
           </p>
         </div>
         <a 
-          href="/"
+          href={repoName ? `/?repo=${repoName}` : "/"}
           className="font-mono font-bold bg-brutal-white px-6 py-3 border-3 border-brutal-black shadow-brutal hover:-translate-y-1 hover:shadow-brutal-lg active:translate-y-1 active:shadow-brutal-hover transition-all"
         >
           &larr; BACK TO DASHBOARD

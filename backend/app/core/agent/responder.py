@@ -57,7 +57,7 @@ def answer_question(request: ChatRequest) -> ChatResponse:
             question=request.question,
         )
 
-    context_block = _build_context_block(retrieved)
+    context_block = _build_context_block(retrieved, request.repo_name)
     prompt = _build_answer_prompt(request.question, request.repo_name, context_block)
 
     # ── Step 3: Call LLM ───────────────────────────────────────────────────────
@@ -87,6 +87,7 @@ def answer_question(request: ChatRequest) -> ChatResponse:
 
 def _build_context_block(
     retrieved: list[tuple],
+    repo_name: str,
 ) -> str:
     """
     Format the retrieved OKF files into a clean context block for the prompt.
@@ -94,12 +95,28 @@ def _build_context_block(
     """
     blocks = []
     for idx, (detail, score) in enumerate(retrieved, start=1):
+        # Increased to ~15000 chars to avoid aggressively truncating deep technical details
+        markdown_body = f"{detail.content[:15000]}"
+        
+        # Optionally inject the RAW source code so the LLM can read exact math/logic 
+        # (which might have been skipped by the high-level markdown summarizer)
+        raw_code_block = ""
+        if detail.resource:
+            from pathlib import Path
+            from app.utils.file_utils import safe_read
+            source_path = settings.clone_path / repo_name / detail.resource
+            if source_path.exists():
+                raw_code = safe_read(source_path)
+                if raw_code:
+                    raw_code_block = f"\n\n--- ORIGINAL SOURCE CODE ---\n```\n{raw_code[:15000]}\n```\n"
+
         block = (
             f"--- Knowledge File {idx}: {detail.title} ---\n"
             f"File: {detail.filename}\n"
             f"Tags: {', '.join(detail.tags)}\n"
             f"Relevance: {score:.2f}\n\n"
-            f"{detail.content[:3000]}"  # Cap body to ~3000 chars to control tokens
+            f"{markdown_body}"
+            f"{raw_code_block}"
         )
         blocks.append(block)
     return "\n\n".join(blocks)
