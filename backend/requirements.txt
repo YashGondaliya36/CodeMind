@@ -18,7 +18,11 @@ PyYAML
 python-frontmatter
 
 # ── AST & Code Parsing ───────────────
-# Built-in `ast` module used for Python files — no extra dep needed
+# Built-in `ast` module used for Python files
+tree-sitter
+tree-sitter-python
+tree-sitter-javascript
+tree-sitter-typescript
 
 # ── Knowledge Graph ───────────────
 networkx

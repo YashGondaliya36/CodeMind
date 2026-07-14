@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     _ensure_directories()
     yield
     # Shutdown
-    print("👋  CodeMind backend shutting down.")
+    print("CodeMind backend shutting down.")
 
 
 def _ensure_directories() -> None:
@@ -38,8 +38,8 @@ def _ensure_directories() -> None:
     import os
     os.makedirs(settings.OKF_BUNDLES_DIR, exist_ok=True)
     os.makedirs(settings.REPOS_CLONE_DIR, exist_ok=True)
-    print(f"📂  OKF bundles dir  : {settings.OKF_BUNDLES_DIR}")
-    print(f"📂  Repos clone dir  : {settings.REPOS_CLONE_DIR}")
+    print(f"OKF bundles dir  : {settings.OKF_BUNDLES_DIR}")
+    print(f"Repos clone dir  : {settings.REPOS_CLONE_DIR}")
 
 
 # ── App Factory ───────────────────────────────────────────────────────────────

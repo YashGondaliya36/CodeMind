@@ -1,16 +1,20 @@
 """
 app/core/agent/responder.py — Context Assembly + LLM Response
 ==============================================================
-Final step of the agent pipeline:
-  1. Retrieve relevant OKF files (via retriever.py)
-  2. Assemble a structured context prompt
-  3. Call the LLM with the question + context
-  4. Return the answer + full transparency (which files were used, token count)
+Final step of the agent pipeline. Now with Intent-First Routing:
+
+  PATH 1 (DIRECT):  General/overview question → Use index.md immediately
+  PATH 2 (RAG):     Specific keyword question → 1-shot retrieval (default)
+  PATH 3 (AGENTIC): Relational/complex question → Full ReAct tool loop
+
+Tools are ONLY invoked on Path 3 or when Path 2 retrieval confidence is too low.
 """
 
 from __future__ import annotations
 
 from app.core.agent.retriever import retrieve_relevant_files
+from app.core.agent.agent_router import classify_query, should_escalate_to_agentic, RoutePath
+from app.core.agent.agentic_loop import run_agentic_loop
 from app.config import settings
 from app.models.chat import ChatRequest, ChatResponse, SourceFile
 from app.utils.llm_client import generate_text, count_tokens
@@ -18,70 +22,112 @@ from app.utils.llm_client import generate_text, count_tokens
 
 def answer_question(request: ChatRequest) -> ChatResponse:
     """
-    Core agent entrypoint — takes a ChatRequest, runs the full
-    selective retrieval pipeline, and returns a grounded answer.
-
-    Args:
-        request: ChatRequest with repo_name, question, and max_files.
-
-    Returns:
-        ChatResponse with the answer, sources used, and transparency metadata.
-
-    Raises:
-        FileNotFoundError: If the bundle doesn't exist.
-        RuntimeError: If the LLM call fails.
+    Core agent entrypoint — routes the request to the optimal strategy.
     """
-    # ── Step 1: Retrieve relevant OKF files ────────────────────────────────────
-    retrieved = retrieve_relevant_files(
-        repo_name=request.repo_name,
-        question=request.question,
-        max_files=request.max_files,
-        min_score=settings.AGENT_MIN_RELEVANCE_SCORE,
-    )
-
-    # Track how many files were scanned (for transparency display)
     from app.core.agent.metadata_scanner import scan_all_metadata
     all_meta = scan_all_metadata(request.repo_name)
     files_scanned = len(all_meta)
 
-    # ── Step 2: Assemble context ───────────────────────────────────────────────
-    if not retrieved:
-        # No relevant files found — answer without context (best effort)
-        answer = _answer_without_context(request.question, request.repo_name)
-        return ChatResponse(
-            answer=answer,
-            sources_used=[],
-            files_scanned=files_scanned,
-            tokens_used=None,
+    # ── Intent Classification (Zero Cost — pure regex) ─────────────────────────
+    route = classify_query(request.question)
+
+    # ── PATH 1: Direct Overview (cheapest — only uses index.md) ───────────────
+    if route == RoutePath.DIRECT:
+        return _answer_direct(request, files_scanned)
+
+    # ── PATH 2: Standard RAG (1-shot retrieval) ────────────────────────────────
+    if route == RoutePath.RAG:
+        retrieved = retrieve_relevant_files(
             repo_name=request.repo_name,
             question=request.question,
+            max_files=request.max_files,
+            min_score=0.0,
         )
+        scores = [score for _, score in retrieved]
 
-    context_block = _build_context_block(retrieved, request.repo_name)
-    prompt = _build_answer_prompt(request.question, request.repo_name, context_block)
+        # Auto-escalate if retrieval confidence is too low
+        if should_escalate_to_agentic(scores):
+            route = RoutePath.AGENTIC
+        else:
+            return _answer_from_rag(request, retrieved, files_scanned)
 
-    # ── Step 3: Call LLM ───────────────────────────────────────────────────────
-    answer = generate_text(prompt, temperature=0.3)
+    # ── PATH 3: Agentic Loop (only when needed) ────────────────────────────────
+    if route == RoutePath.AGENTIC:
+        return _answer_agentically(request, files_scanned)
+
+    # Fallback (should never reach here)
+    return _answer_direct(request, files_scanned)
+
+
+# ── Path Handler: Direct (index.md only) ─────────────────────────────────────
+
+def _answer_direct(request: ChatRequest, files_scanned: int) -> ChatResponse:
+    """Path 1: Use master index.md for general overview questions."""
+    from app.core.bundle.manager import get_file_detail
+    try:
+        index = get_file_detail(request.repo_name, "index.md")
+        context = f"--- Project Index ---\n{index.content[:10000]}"
+    except Exception:
+        context = "No index file available."
+
+    prompt = _build_answer_prompt(request.question, request.repo_name, context)
+    answer = generate_text(prompt, temperature=0.2)
     tokens_used = count_tokens(prompt + answer)
-
-    # ── Step 4: Build SourceFile list for transparency ─────────────────────────
-    sources = [
-        SourceFile(
-            filename=detail.filename,
-            title=detail.title,
-            relevance_score=score,
-            tags=detail.tags,
-        )
-        for detail, score in retrieved
-    ]
 
     return ChatResponse(
         answer=answer,
-        sources_used=sources,
+        sources_used=[SourceFile(filename="index.md", title="Project Index", relevance_score=1.0, tags=["overview"])],
         files_scanned=files_scanned,
         tokens_used=tokens_used,
         repo_name=request.repo_name,
         question=request.question,
+    )
+
+
+# ── Path Handler: Standard RAG (1-shot) ───────────────────────────────────────
+
+def _answer_from_rag(request: ChatRequest, retrieved: list, files_scanned: int) -> ChatResponse:
+    """Path 2: Standard 1-shot retrieval + answer."""
+    if not retrieved:
+        return _answer_agentically(request, files_scanned)
+
+    context_block = _build_context_block(retrieved, request.repo_name)
+    prompt = _build_answer_prompt(request.question, request.repo_name, context_block)
+    answer = generate_text(prompt, temperature=0.3)
+    tokens_used = count_tokens(prompt + answer)
+
+    sources = [
+        SourceFile(filename=d.filename, title=d.title, relevance_score=s, tags=d.tags)
+        for d, s in retrieved
+    ]
+    return ChatResponse(
+        answer=answer, sources_used=sources, files_scanned=files_scanned,
+        tokens_used=tokens_used, repo_name=request.repo_name, question=request.question,
+    )
+
+
+# ── Path Handler: Agentic Loop ────────────────────────────────────────────────
+
+def _answer_agentically(request: ChatRequest, files_scanned: int) -> ChatResponse:
+    """Path 3: Full ReAct tool loop — only activated when truly needed."""
+    answer, tool_calls_log, tokens_used = run_agentic_loop(
+        repo_name=request.repo_name,
+        question=request.question,
+    )
+
+    # Build source list from tool call log (which files were read)
+    sources = []
+    seen = set()
+    for call in tool_calls_log:
+        if call["tool"] in ("read_module", "follow_import"):
+            fname = call["args"].get("filename") or call["args"].get("import_name", "unknown")
+            if fname not in seen:
+                sources.append(SourceFile(filename=fname, title=fname, relevance_score=1.0, tags=["agentic"]))
+                seen.add(fname)
+
+    return ChatResponse(
+        answer=answer, sources_used=sources, files_scanned=files_scanned,
+        tokens_used=tokens_used, repo_name=request.repo_name, question=request.question,
     )
 
 

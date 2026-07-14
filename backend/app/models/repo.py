@@ -29,6 +29,10 @@ class AnalyzeRequest(BaseModel):
         description="Languages to parse. Supported: python, javascript, typescript.",
         examples=[["python", "javascript"]],
     )
+    fast_mode: bool = Field(
+        default=True,
+        description="If True, bypasses LLM and generates OKF instantly via AST templates.",
+    )
 
     @field_validator("repo_name")
     @classmethod

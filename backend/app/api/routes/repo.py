@@ -27,6 +27,7 @@ from app.core.producer.crawler import crawl_repo
 from app.core.producer.okf_writer import write_okf_file
 from app.core.producer.parser import parse_file
 from app.core.producer.summarizer import summarize_file
+from app.core.producer.template_summarizer import summarize_file_fast
 from app.models.repo import AnalyzeRequest, JobStatus, RepoListResponse, RepoSummary
 from app.utils.git_utils import get_repo_path
 
@@ -93,14 +94,19 @@ def _run_analysis(job_id: str, request: AnalyzeRequest) -> None:
                 )
 
                 # Summarize
+                mode_label = "AST Fast Mode" if request.fast_mode else "LLM Deep Mode"
                 _update_job(
                     job_id,
                     status="summarizing",
-                    message=f"Summarizing: {crawled_file.relative_path}",
+                    message=f"Summarizing ({mode_label}): {crawled_file.relative_path}",
                     progress=20 + int(70 * idx / total),
                     files_processed=idx,
                 )
-                summary = summarize_file(parsed)
+                
+                if request.fast_mode:
+                    summary = summarize_file_fast(parsed)
+                else:
+                    summary = summarize_file(parsed)
 
                 # Write OKF file
                 write_okf_file(request.repo_name, parsed, summary)

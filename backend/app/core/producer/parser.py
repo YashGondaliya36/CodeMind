@@ -17,6 +17,15 @@ from pathlib import Path
 
 from app.utils.file_utils import safe_read
 
+try:
+    from tree_sitter import Language, Parser
+    import tree_sitter_javascript as tsjavascript
+    import tree_sitter_typescript as tstypescript
+    TS_AVAILABLE = True
+except ImportError:
+    TS_AVAILABLE = False
+
+
 
 @dataclass
 class FunctionInfo:
@@ -132,16 +141,22 @@ def _parse_python(source: str, file_path: str, line_count: int) -> ParsedFile:
     )
 
 
+def _get_node_name(node: ast.expr) -> str:
+    """Helper to safely extract a readable name from an AST node."""
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Attribute):
+        if hasattr(node.value, "id"):
+            return f"{node.value.id}.{node.attr}"
+        return node.attr
+    return "unknown"
+
+
 def _extract_python_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> FunctionInfo:
     args = [arg.arg for arg in node.args.args]
-    decorators = []
-    for dec in node.decorator_list:
-        if isinstance(dec, ast.Name):
-            decorators.append(dec.id)
-        elif isinstance(dec, ast.Attribute):
-            decorators.append(f"{dec.value.id}.{dec.attr}")  # type: ignore
+    decorators = [_get_node_name(dec) for dec in node.decorator_list]
 
     return FunctionInfo(
         name=node.name,
@@ -154,12 +169,7 @@ def _extract_python_function(
 
 
 def _extract_python_class(node: ast.ClassDef) -> ClassInfo:
-    bases = []
-    for base in node.bases:
-        if isinstance(base, ast.Name):
-            bases.append(base.id)
-        elif isinstance(base, ast.Attribute):
-            bases.append(f"{base.value.id}.{base.attr}")  # type: ignore
+    bases = [_get_node_name(base) for base in node.bases]
 
     methods = []
     for item in node.body:
@@ -194,27 +204,89 @@ def _parse_js_ts(
     source: str, file_path: str, language: str, line_count: int
 ) -> ParsedFile:
     """
-    Lightweight regex-based parser for JS/TS files.
-    Extracts function names, class names, and imports.
-    Not as precise as AST but covers 90% of practical cases.
+    Parse JS/TS files using Tree-sitter if available, otherwise fallback to Regex.
     """
-    functions = _extract_js_functions(source)
-    classes = _extract_js_classes(source)
-    imports = _extract_js_imports(source)
+    if not TS_AVAILABLE:
+        functions = _extract_js_functions_regex(source)
+        classes = _extract_js_classes_regex(source)
+        imports = _extract_js_imports_regex(source)
+        return ParsedFile(
+            file_path=file_path, language=language, module_docstring=None,
+            imports=imports, functions=functions, classes=classes, line_count=line_count,
+        )
+
+    # Initialize language based on file extension
+    if file_path.endswith(".ts"):
+        lang = Language(tstypescript.language_typescript())
+    elif file_path.endswith(".tsx"):
+        lang = Language(tstypescript.language_tsx())
+    else:
+        lang = Language(tsjavascript.language())
+
+    parser = Parser(lang)
+    tree = parser.parse(source.encode("utf8"))
+
+    # Define queries
+    import_query = lang.query("(import_statement source: (string) @import)")
+    
+    function_query = lang.query("""
+        (function_declaration name: (identifier) @name parameters: (formal_parameters) @params)
+        (lexical_declaration (variable_declarator name: (identifier) @name value: (arrow_function parameters: (formal_parameters) @params)))
+        (lexical_declaration (variable_declarator name: (identifier) @name value: (function parameters: (formal_parameters) @params)))
+    """)
+    
+    class_query = lang.query("""
+        (class_declaration name: (identifier) @name)
+    """)
+
+    imports = []
+    for match in import_query.matches(tree.root_node):
+        for node in match[1].values():
+            if isinstance(node, list):
+                node = node[0]
+            val = node.text.decode("utf8")
+            imports.append(val.strip("'\""))
+    imports = sorted(set(imports))
+
+    functions = []
+    for match in function_query.matches(tree.root_node):
+        nodes = match[1]
+        name_node = nodes.get("name")
+        params_node = nodes.get("params")
+        if isinstance(name_node, list): name_node = name_node[0]
+        if isinstance(params_node, list): params_node = params_node[0]
+        
+        if name_node and params_node:
+            name = name_node.text.decode("utf8")
+            params = params_node.text.decode("utf8").strip("()").split(",")
+            params = [p.strip() for p in params if p.strip()]
+            
+            # Simple async check on the raw text
+            is_async = b"async" in source[:name_node.start_byte][-20:].lower()
+            
+            functions.append(FunctionInfo(
+                name=name, docstring=None, args=params, 
+                is_async=is_async, line_number=name_node.start_point[0] + 1
+            ))
+
+    classes = []
+    for match in class_query.matches(tree.root_node):
+        nodes = match[1]
+        name_node = nodes.get("name")
+        if isinstance(name_node, list): name_node = name_node[0]
+        if name_node:
+            classes.append(ClassInfo(
+                name=name_node.text.decode("utf8"), docstring=None, 
+                base_classes=[], methods=[], line_number=name_node.start_point[0] + 1
+            ))
 
     return ParsedFile(
-        file_path=file_path,
-        language=language,
-        module_docstring=None,
-        imports=imports,
-        functions=functions,
-        classes=classes,
-        line_count=line_count,
+        file_path=file_path, language=language, module_docstring=None,
+        imports=imports, functions=functions, classes=classes, line_count=line_count,
     )
 
 
-def _extract_js_functions(source: str) -> list[FunctionInfo]:
-    """Extract function declarations from JS/TS source."""
+def _extract_js_functions_regex(source: str) -> list[FunctionInfo]:
     patterns = [
         r"(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)",
         r"(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*=>",
@@ -227,37 +299,29 @@ def _extract_js_functions(source: str) -> list[FunctionInfo]:
             args_str = match.group(2)
             args = [a.strip() for a in args_str.split(",") if a.strip()]
             functions.append(FunctionInfo(
-                name=name,
-                docstring=None,
-                args=args,
+                name=name, docstring=None, args=args,
                 is_async="async" in match.group(0),
                 line_number=source[: match.start()].count("\n") + 1,
             ))
     return functions
 
 
-def _extract_js_classes(source: str) -> list[ClassInfo]:
-    """Extract class declarations from JS/TS source."""
+def _extract_js_classes_regex(source: str) -> list[ClassInfo]:
     pattern = r"(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?"
     classes = []
     for match in re.finditer(pattern, source):
         classes.append(ClassInfo(
-            name=match.group(1),
-            docstring=None,
+            name=match.group(1), docstring=None,
             base_classes=[match.group(2)] if match.group(2) else [],
-            methods=[],
-            line_number=source[: match.start()].count("\n") + 1,
+            methods=[], line_number=source[: match.start()].count("\n") + 1,
         ))
     return classes
 
 
-def _extract_js_imports(source: str) -> list[str]:
-    """Extract import/require statements from JS/TS source."""
+def _extract_js_imports_regex(source: str) -> list[str]:
     imports = set()
-    # ES6 imports: import X from 'module'
     for match in re.finditer(r"import\s+.*?\s+from\s+['\"]([^'\"]+)['\"]", source):
         imports.add(match.group(1))
-    # CommonJS: require('module')
     for match in re.finditer(r"require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", source):
         imports.add(match.group(1))
     return sorted(imports)
