@@ -55,11 +55,12 @@ export interface ChatResponse {
 
 // ── API Functions ────────────────────────────────────────────────────────
 
-export async function analyzeRepo(sourcePath: string, repoName: string) {
+export async function analyzeRepo(sourcePath: string, repoName: string, fastMode: boolean = true) {
   const res = await api.post<JobStatus>("/repo/analyze", {
     source: sourcePath,
     repo_name: repoName,
-    languages: ["python", "javascript", "typescript"]
+    languages: ["python", "javascript", "typescript"],
+    fast_mode: fastMode
   });
   return res.data;
 }

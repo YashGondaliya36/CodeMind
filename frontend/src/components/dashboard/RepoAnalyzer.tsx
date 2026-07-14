@@ -13,6 +13,7 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
   const [repoName, setRepoName] = useState("codemind-backend");
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<JobStatus | null>(null);
+  const [fastMode, setFastMode] = useState(true);
 
   // Poll status while job is active
   useEffect(() => {
@@ -42,7 +43,7 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
   const handleAnalyze = async () => {
     try {
       setStatus(null); // reset
-      const initialJob = await analyzeRepo(sourcePath, repoName);
+      const initialJob = await analyzeRepo(sourcePath, repoName, fastMode);
       setJobId(initialJob.job_id);
       setStatus(initialJob);
     } catch (e: any) {
@@ -71,6 +72,19 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
             className="w-full border-3 border-brutal-black px-3 py-2 bg-brutal-white shadow-brutal focus:outline-none focus:bg-yellow-50"
           />
         </div>
+      </div>
+      
+      <div className="flex items-center gap-2 mt-2 mb-4">
+        <input 
+          type="checkbox" 
+          id="fastMode" 
+          checked={fastMode} 
+          onChange={(e) => setFastMode(e.target.checked)}
+          className="w-5 h-5 border-3 border-brutal-black accent-brutal-green cursor-pointer"
+        />
+        <label htmlFor="fastMode" className="text-sm font-bold uppercase cursor-pointer">
+          Fast Mode (Zero-Cost AST Parsing)
+        </label>
       </div>
       
       <div className="flex gap-4">
