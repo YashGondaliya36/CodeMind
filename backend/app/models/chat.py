@@ -8,6 +8,12 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class HistoryEntry(BaseModel):
+    """One turn in the conversation history (question + answer pair)."""
+    question: str
+    answer: str
+
+
 class ChatRequest(BaseModel):
     """Body for POST /chat/ask"""
 
@@ -28,6 +34,11 @@ class ChatRequest(BaseModel):
         ge=1,
         le=15,
         description="Maximum number of OKF files to inject into context (cost control).",
+    )
+    conversation_history: list[HistoryEntry] = Field(
+        default=[],
+        description="Last 3 Q&A pairs for multi-turn context. Oldest first.",
+        max_length=3,
     )
 
 

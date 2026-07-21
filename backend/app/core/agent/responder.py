@@ -73,7 +73,7 @@ def _answer_direct(request: ChatRequest, files_scanned: int) -> ChatResponse:
     except Exception:
         context = "No index file available."
 
-    prompt = _build_answer_prompt(request.question, request.repo_name, context)
+    prompt = _build_answer_prompt(request.question, request.repo_name, context, history=request.conversation_history or [])
     answer, tok_in, tok_out = generate_text(prompt, temperature=0.2)
 
     return ChatResponse(
@@ -96,7 +96,7 @@ def _answer_from_rag(request: ChatRequest, retrieved: list, files_scanned: int) 
         return _answer_agentically(request, files_scanned)
 
     context_block = _build_context_block(retrieved, request.repo_name)
-    prompt = _build_answer_prompt(request.question, request.repo_name, context_block)
+    prompt = _build_answer_prompt(request.question, request.repo_name, context_block, history=request.conversation_history or [])
     answer, tok_in, tok_out = generate_text(prompt, temperature=0.3)
 
     sources = [
@@ -174,13 +174,22 @@ def _build_context_block(
     return "\n\n".join(blocks)
 
 
-def _build_answer_prompt(question: str, repo_name: str, context: str) -> str:
-    """Build the final LLM prompt with injected OKF context."""
+def _build_answer_prompt(question: str, repo_name: str, context: str, history: list | None = None) -> str:
+    """Build the final LLM prompt with injected OKF context and conversation history."""
+    
+    # Build conversation history block
+    history_block = ""
+    if history:
+        turns = []
+        for h in history[-3:]:  # Last 3 turns max
+            turns.append(f"Q: {h.question}\nA: {h.answer[:500]}...")  # Truncate long answers
+        history_block = "## Conversation History (for context)\n" + "\n\n".join(turns) + "\n\n---\n\n"
+
     return f"""You are CodeMind, an expert AI developer assistant with deep knowledge of the '{repo_name}' codebase.
 
 You have been given structured knowledge files (OKF format) that describe specific modules and concepts in this codebase. Use ONLY this provided context to answer the question. If the answer is not covered in the context, say so clearly — do NOT hallucinate.
 
-## Knowledge Context (from OKF Bundle)
+{history_block}## Knowledge Context (from OKF Bundle)
 
 {context}
 
@@ -193,11 +202,12 @@ You have been given structured knowledge files (OKF format) that describe specif
 ---
 
 ## Instructions
-- Answer clearly and directly.
-- Reference specific function names, class names, or file paths from the context when relevant.
-- Use markdown formatting (headers, code blocks, bullet points) for clarity.
-- If the context is insufficient, say: "The available knowledge files don't fully cover this. Based on what I can see: [partial answer]"
-- Do NOT make up information that isn't in the context.
+1. **REASON FIRST**: Before writing your answer, briefly think: which part(s) of the context are most relevant? Which function or class directly addresses the question?
+2. Answer clearly and directly, referencing that reasoning.
+3. Reference specific function names, class names, or file paths from the context when relevant.
+4. Use markdown formatting (headers, code blocks, bullet points, **tables**) for clarity.
+5. If the context is insufficient, say: "The available knowledge files don't fully cover this. Based on what I can see: [partial answer]"
+6. Do NOT make up information that isn't in the context.
 
 ## Answer:
 """

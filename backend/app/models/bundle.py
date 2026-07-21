@@ -19,6 +19,7 @@ class OKFFileMeta(BaseModel):
     title: str
     description: Optional[str] = None
     tags: list[str] = []
+    key_functions: list[str] = []           # Key function/class names for precision search
     depends_on: list[str] = []             # Other OKF file slugs this one references
     resource: Optional[str] = None         # Path to the actual source file
     timestamp: Optional[str] = None        # ISO date string

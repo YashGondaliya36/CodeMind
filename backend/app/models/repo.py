@@ -63,6 +63,7 @@ class JobStatus(BaseModel):
     message: str = Field(description="Human-readable description of current step")
     files_processed: int = 0
     total_files: int = 0
+    current_file: Optional[str] = None  # The file currently being processed
     error_detail: Optional[str] = None
     bundle_path: Optional[str] = None   # Set when status == "done"
 

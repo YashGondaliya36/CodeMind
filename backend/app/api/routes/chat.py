@@ -136,16 +136,12 @@ async def ask_stream(request: ChatRequest):
                 yield emit("thinking", {"message": "Entering Agent Reasoning Loop..."})
                 await asyncio.sleep(0.05)
 
-                # Stream tool calls from the agentic loop
+                # Stream tool calls and final done response from the agentic loop
                 from app.core.agent.agentic_loop import run_agentic_loop_streaming
                 
                 async for event in run_agentic_loop_streaming(request.repo_name, request.question, initial_context=locals().get("initial_context")):
                     yield emit(event["type"], event)
                     await asyncio.sleep(0.05)
-
-                # Get final complete response
-                response = answer_question(request)
-                yield emit("done", {"response": response.model_dump()})
 
         except Exception as e:
             yield emit("error", {"message": str(e)})

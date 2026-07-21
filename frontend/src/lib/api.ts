@@ -17,6 +17,7 @@ export interface JobStatus {
   message: string;
   files_processed: number;
   total_files: number;
+  current_file: string | null;
   error_detail: string | null;
   bundle_path: string | null;
 }

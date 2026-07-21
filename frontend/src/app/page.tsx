@@ -49,7 +49,9 @@ function DashboardContent() {
               <BrutalistCardTitle>1. ANALYZE REPO</BrutalistCardTitle>
             </BrutalistCardHeader>
             <BrutalistCardContent className="pt-6">
-              <p className="font-mono text-sm mb-4">Input a path to generate an OKF bundle.</p>
+              <p className="font-mono text-xs mb-4 text-brutal-black/70">
+                Paste a <span className="font-black">GitHub URL</span> or local path to generate an OKF knowledge bundle.
+              </p>
               <RepoAnalyzer onBundleReady={(repo) => setActiveRepo(repo)} />
             </BrutalistCardContent>
           </BrutalistCard>

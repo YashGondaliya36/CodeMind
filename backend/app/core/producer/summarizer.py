@@ -56,7 +56,7 @@ def _build_prompt(parsed: ParsedFile) -> str:
     func_lines = []
     for f in parsed.functions[:15]:  # Cap at 15 to avoid prompt bloat
         async_prefix = "async " if f.is_async else ""
-        args = ", ".join(parsed.functions[0].args[:5]) if parsed.functions else ""
+        args = ", ".join(f.args[:5]) if f.args else ""  # FIX: use f.args, not functions[0].args
         doc = f'  → "{f.docstring[:80]}..."' if f.docstring else ""
         func_lines.append(f"  - {async_prefix}{f.name}({args}){doc}")
 

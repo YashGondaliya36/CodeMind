@@ -3,7 +3,137 @@
 import { useState, useEffect, useRef } from "react";
 import { BrutalistButton } from "@/components/ui/BrutalistButton";
 import { ChatSource } from "@/lib/api";
-import ReactMarkdown from "react-markdown";
+
+// ── Minimal GFM-compatible Markdown Renderer ───────────────────────────────────
+function MarkdownBlock({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  const inlineFormat = (text: string): React.ReactNode => {
+    // Replace **bold**, *italic*, and `code` inline
+    const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/);
+    return parts.map((part, idx) => {
+      if (part.startsWith("**") && part.endsWith("**"))
+        return <strong key={idx} className="font-black">{part.slice(2, -2)}</strong>;
+      if (part.startsWith("*") && part.endsWith("*"))
+        return <em key={idx}>{part.slice(1, -1)}</em>;
+      if (part.startsWith("`") && part.endsWith("`"))
+        return <code key={idx} className="bg-brutal-white border border-brutal-black px-1 text-[11px] font-mono rounded">{part.slice(1, -1)}</code>;
+      return part;
+    });
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      elements.push(
+        <pre key={i} className="bg-brutal-white border-2 border-brutal-black p-3 overflow-x-auto text-[11px] font-mono my-3 rounded">
+          <code>{codeLines.join("\n")}</code>
+        </pre>
+      );
+      i++;
+      continue;
+    }
+
+    // GFM Table: detect separator row (---, :---:, etc.)
+    if (i + 1 < lines.length && /^\s*\|?[\s:-]+\|[\s|:-]+$/.test(lines[i + 1])) {
+      const headerCells = line.split("|").map(c => c.trim()).filter(c => c);
+      const tableRows: string[][] = [];
+      i += 2; // skip header + separator
+      while (i < lines.length && lines[i].includes("|")) {
+        tableRows.push(lines[i].split("|").map(c => c.trim()).filter(c => c));
+        i++;
+      }
+      elements.push(
+        <div key={i} className="overflow-x-auto my-4">
+          <table className="w-full border-collapse border-2 border-brutal-black text-[12px]">
+            <thead>
+              <tr className="bg-brutal-black text-white">
+                {headerCells.map((h, hi) => (
+                  <th key={hi} className="border border-brutal-black/30 px-3 py-1.5 text-left font-black uppercase">{inlineFormat(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="border border-brutal-black/20 px-3 py-1.5">{inlineFormat(cell)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    // Headings
+    const hMatch = line.match(/^(#{1,4})\s+(.+)/);
+    if (hMatch) {
+      const level = hMatch[1].length;
+      const text = hMatch[2];
+      const cls = ["text-xl", "text-lg", "text-base", "text-sm"][level - 1] + " font-black uppercase mt-4 mb-1";
+      elements.push(<div key={i} className={cls}>{inlineFormat(text)}</div>);
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={i} className="border-brutal-black/30 my-3" />);
+      i++;
+      continue;
+    }
+
+    // Ordered list item
+    const olMatch = line.match(/^\d+\.\s+(.+)/);
+    if (olMatch) {
+      elements.push(<li key={i} className="ml-5 list-decimal mb-0.5">{inlineFormat(olMatch[1])}</li>);
+      i++;
+      continue;
+    }
+
+    // Unordered list item
+    const ulMatch = line.match(/^[-*+]\s+(.+)/);
+    if (ulMatch) {
+      elements.push(<li key={i} className="ml-5 list-disc mb-0.5">{inlineFormat(ulMatch[1])}</li>);
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (line.startsWith(">")) {
+      elements.push(<blockquote key={i} className="border-l-4 border-brutal-black/40 pl-3 italic opacity-80 my-1">{inlineFormat(line.slice(1).trim())}</blockquote>);
+      i++;
+      continue;
+    }
+
+    // Blank line
+    if (line.trim() === "") {
+      elements.push(<div key={i} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(<p key={i} className="leading-relaxed mb-1">{inlineFormat(line)}</p>);
+    i++;
+  }
+
+  return <div className="text-sm space-y-0.5">{elements}</div>;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -95,10 +225,20 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
     const eventLog: AgentEvent[] = [];
 
     try {
+      // Build last-3 Q&A history from completed message pairs
+      const history = messages
+        .reduce((acc: Array<{question: string; answer: string}>, msg, i, arr) => {
+          if (msg.role === "user" && arr[i + 1]?.role === "agent") {
+            acc.push({ question: msg.content, answer: arr[i + 1].content });
+          }
+          return acc;
+        }, [])
+        .slice(-3); // Last 3 turns only
+
       const response = await fetch("http://localhost:8000/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo_name: repoName, question, max_files: 5 }),
+        body: JSON.stringify({ repo_name: repoName, question, max_files: 5, conversation_history: history }),
       });
 
       if (!response.body) throw new Error("No response body");
@@ -301,9 +441,7 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
 
                     {/* Answer */}
                     <div className="px-5 pb-4">
-                      <div className="text-sm leading-relaxed prose prose-sm max-w-none prose-headings:font-black prose-headings:uppercase prose-a:text-brutal-orange prose-a:font-bold prose-code:bg-brutal-white prose-code:px-1 prose-code:border prose-code:border-brutal-black prose-pre:bg-brutal-white prose-pre:text-brutal-black prose-pre:border-2 prose-pre:border-brutal-black">
-                        <ReactMarkdown>{pair.agent.content}</ReactMarkdown>
-                      </div>
+                      <MarkdownBlock content={pair.agent.content} />
                     </div>
 
                     {/* Sources Only */}

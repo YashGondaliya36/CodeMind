@@ -66,6 +66,10 @@ def _render_okf_file(parsed: ParsedFile, summary: ModuleSummary) -> str:
 
     # ── YAML Frontmatter ──────────────────────────────────────────────────────
     tags_yaml = "\n".join(f"  - {tag}" for tag in summary.tags)
+    key_funcs_yaml = (
+        "\n".join(f"  - {fn}" for fn in summary.key_functions)
+        if summary.key_functions else "  []"
+    )
     depends_yaml = (
         "\n".join(f"  - {dep}" for dep in summary.key_functions[:3])
         if summary.key_functions else "  []"
@@ -78,6 +82,8 @@ description: {summary.description}
 resource: {parsed.file_path}
 tags:
 {tags_yaml if tags_yaml else "  []"}
+key_functions:
+{key_funcs_yaml}
 timestamp: {today}
 ---"""
 

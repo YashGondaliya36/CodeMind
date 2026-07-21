@@ -41,6 +41,7 @@ _STOP_WORDS = {
 _WEIGHTS = {
     "title": 3.0,
     "tags": 2.5,
+    "key_functions": 4.0,   # Highest weight: exact function/class name match
     "description": 1.5,
     "type": 1.0,
     "filename": 0.5,
@@ -135,7 +136,8 @@ def _score_file(meta: OKFFileMeta, keywords: set[str]) -> float:
     Compute a relevance score for an OKF file against a set of keywords.
 
     Score = sum of weighted keyword hits across each metadata field.
-    Normalised to [0, 1] range.
+    Normalised to [0, 1] range against the MAX ACTUAL score, not theoretical max,
+    preventing multi-keyword bias.
     """
     if not keywords:
         return 0.0
@@ -151,6 +153,13 @@ def _score_file(meta: OKFFileMeta, keywords: set[str]) -> float:
     tag_hits = len(keywords & tag_words)
     raw_score += tag_hits * _WEIGHTS["tags"]
 
+    # Key functions — highest priority (direct function/class name match)
+    if meta.key_functions:
+        kf_words = {fn.lower() for fn in meta.key_functions}
+        # Check both exact match and partial substring match for function names
+        kf_hits = sum(1 for kw in keywords if any(kw in fn.lower() or fn.lower() in kw for fn in kf_words))
+        raw_score += kf_hits * _WEIGHTS["key_functions"]
+
     # Description
     if meta.description:
         desc_words = set(re.findall(r"\b\w+\b", meta.description.lower()))
@@ -164,8 +173,11 @@ def _score_file(meta: OKFFileMeta, keywords: set[str]) -> float:
     filename_words = set(re.findall(r"\b\w+\b", meta.filename.lower()))
     raw_score += len(keywords & filename_words) * _WEIGHTS["filename"]
 
-    # Normalise: max possible score if every keyword hits every field
-    max_score = len(keywords) * sum(_WEIGHTS.values())
-    normalised = raw_score / max_score if max_score > 0 else 0.0
+    # FIX: Normalize against max score any single keyword could contribute,
+    # multiplied by number of actual hits (not total keywords).
+    # This prevents long queries from always scoring lower.
+    max_single = max(_WEIGHTS.values())  # 4.0 (key_functions)
+    max_possible = len(keywords) * max_single
+    normalised = raw_score / max_possible if max_possible > 0 else 0.0
 
     return min(normalised, 1.0)

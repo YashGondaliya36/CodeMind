@@ -172,6 +172,7 @@ def run_agentic_loop(
     tokens_in = 0
     tokens_out = 0
     steps = 0
+    seen_tool_calls: set[str] = set()  # Deduplication: track (tool, args) hashes
     
     while steps < MAX_STEPS:
         # Send the current conversation to the LLM
@@ -219,11 +220,16 @@ def run_agentic_loop(
             tool_name = fc.name
             tool_args = dict(fc.args) if fc.args else {}
             
-            # Log the tool call for transparency
-            tool_calls_log.append({"tool": tool_name, "args": tool_args})
-            
-            # Execute tool in Python (sandboxed)
-            result = execute_tool(tool_name, repo_name, tool_args)
+            # Python-level deduplication: skip repeated identical calls
+            call_key = f"{tool_name}:{sorted(tool_args.items())}"
+            if call_key in seen_tool_calls:
+                result = {"cached": True, "message": "Duplicate call skipped. Use the result from the previous identical call."}
+            else:
+                seen_tool_calls.add(call_key)
+                # Log the tool call for transparency
+                tool_calls_log.append({"tool": tool_name, "args": tool_args})
+                # Execute tool in Python (sandboxed)
+                result = execute_tool(tool_name, repo_name, tool_args)
             
             # Format the result as a function response for Gemini
             tool_results.append(
@@ -279,8 +285,8 @@ def run_agentic_loop(
 async def run_agentic_loop_streaming(repo_name: str, question: str, initial_context: str | None = None):
     """
     Async generator version of run_agentic_loop.
-    Yields SSE-compatible event dicts as the agent reasons and calls tools.
-    The /chat/stream endpoint uses this to push live updates to the UI.
+    Yields SSE-compatible event dicts as the agent reasons and calls tools,
+    and finishes with a 'done' event containing accumulated token counts.
     """
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
     system_prompt = _build_system_prompt(repo_name)
@@ -293,6 +299,9 @@ async def run_agentic_loop_streaming(repo_name: str, question: str, initial_cont
     ]
 
     steps = 0
+    tokens_in = 0
+    tokens_out = 0
+    tool_calls_log: list[dict[str, Any]] = []
 
     while steps < MAX_STEPS:
         response = client.models.generate_content(
@@ -305,6 +314,11 @@ async def run_agentic_loop_streaming(repo_name: str, question: str, initial_cont
             ),
         )
 
+        # Track usage for this step
+        if response.usage_metadata:
+            tokens_in += getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            tokens_out += getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+
         candidate = response.candidates[0]
         response_content = candidate.content
         conversation.append(response_content)
@@ -316,11 +330,39 @@ async def run_agentic_loop_streaming(repo_name: str, question: str, initial_cont
         ]
 
         if not function_calls:
-            # Model gave final text answer — yield it and stop
+            # Model gave final text answer — extract and emit
             import re
             final_text = "".join(p.text for p in response_content.parts if p.text)
             final_text = re.sub(r'<thought>.*?</thought>', '', final_text, flags=re.DOTALL).strip()
+            
             yield {"type": "agent_answer", "message": final_text}
+            
+            # Helper to emit final done event
+            from app.core.agent.metadata_scanner import scan_all_metadata
+            all_meta = scan_all_metadata(repo_name)
+            
+            sources = []
+            seen = set()
+            for call in tool_calls_log:
+                if call["tool"] in ("read_module", "follow_import"):
+                    fname = call["args"].get("filename") or call["args"].get("import_name", "unknown")
+                    if fname not in seen:
+                        sources.append({"filename": fname, "title": fname, "relevance_score": 1.0, "tags": ["agentic"]})
+                        seen.add(fname)
+                        
+            yield {
+                "type": "done",
+                "response": {
+                    "answer": final_text,
+                    "sources_used": sources,
+                    "files_scanned": len(all_meta),
+                    "tokens_input": tokens_in,
+                    "tokens_output": tokens_out,
+                    "tokens_used": tokens_in + tokens_out,
+                    "repo_name": repo_name,
+                    "question": question,
+                }
+            }
             return
 
         # Yield each tool call as an event before executing it
@@ -329,6 +371,8 @@ async def run_agentic_loop_streaming(repo_name: str, question: str, initial_cont
             steps += 1
             tool_name = fc.name
             tool_args = dict(fc.args) if fc.args else {}
+
+            tool_calls_log.append({"tool": tool_name, "args": tool_args})
 
             # Emit tool call event
             yield {
@@ -361,6 +405,62 @@ async def run_agentic_loop_streaming(repo_name: str, question: str, initial_cont
 
     # Circuit breaker hit — emit event and force final answer
     yield {"type": "thinking", "message": "Reached step limit — synthesizing final answer..."}
+
+    conversation.append(
+        types.Content(
+            role="user",
+            parts=[types.Part(text=(
+                "You have used the maximum number of tool calls. "
+                "Please synthesize a final answer based on everything you have found so far."
+            ))]
+        )
+    )
+
+    final_response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=conversation,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.1,
+        ),
+    )
+
+    if final_response.usage_metadata:
+        tokens_in += getattr(final_response.usage_metadata, "prompt_token_count", 0) or 0
+        tokens_out += getattr(final_response.usage_metadata, "candidates_token_count", 0) or 0
+
+    import re
+    final_text = "".join(
+        part.text for part in final_response.candidates[0].content.parts if part.text
+    )
+    final_text = re.sub(r'<thought>.*?</thought>', '', final_text, flags=re.DOTALL).strip()
+
+    yield {"type": "agent_answer", "message": final_text}
+
+    from app.core.agent.metadata_scanner import scan_all_metadata
+    all_meta = scan_all_metadata(repo_name)
+    sources = []
+    seen = set()
+    for call in tool_calls_log:
+        if call["tool"] in ("read_module", "follow_import"):
+            fname = call["args"].get("filename") or call["args"].get("import_name", "unknown")
+            if fname not in seen:
+                sources.append({"filename": fname, "title": fname, "relevance_score": 1.0, "tags": ["agentic"]})
+                seen.add(fname)
+
+    yield {
+        "type": "done",
+        "response": {
+            "answer": final_text,
+            "sources_used": sources,
+            "files_scanned": len(all_meta),
+            "tokens_input": tokens_in,
+            "tokens_output": tokens_out,
+            "tokens_used": tokens_in + tokens_out,
+            "repo_name": repo_name,
+            "question": question,
+        }
+    }
 
 
 def _tool_call_label(tool_name: str, args: dict) -> str:

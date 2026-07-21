@@ -101,6 +101,7 @@ def _run_analysis(job_id: str, request: AnalyzeRequest) -> None:
                     message=f"Summarizing ({mode_label}): {crawled_file.relative_path}",
                     progress=20 + int(70 * idx / total),
                     files_processed=idx,
+                    current_file=crawled_file.relative_path,
                 )
                 
                 if request.fast_mode:
