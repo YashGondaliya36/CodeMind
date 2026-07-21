@@ -44,12 +44,18 @@ def _parse_okf_file(file_path: Path, bundle_root: Path) -> Optional[OKFFileMeta]
         # Relative filename from bundle root (used as unique ID)
         rel_path = str(file_path.relative_to(bundle_root)).replace("\\", "/")
 
+        # Provide explicit metadata defaults for system files (index.md, log.md)
+        fname_lower = file_path.name.lower()
+        default_type = "index" if fname_lower == "index.md" else ("changelog" if fname_lower == "log.md" else "unknown")
+        default_title = "Master Project Index" if fname_lower == "index.md" else ("Bundle Audit Log" if fname_lower == "log.md" else file_path.stem)
+        default_desc = "Table of contents for the knowledge bundle." if fname_lower == "index.md" else ("History log of bundle generation." if fname_lower == "log.md" else None)
+
         return OKFFileMeta(
             filename=rel_path,
-            type=str(meta.get("type", "unknown")),
-            title=str(meta.get("title", file_path.stem)),
-            description=meta.get("description"),
-            tags=list(meta.get("tags", [])),
+            type=str(meta.get("type") or default_type),
+            title=str(meta.get("title") or default_title),
+            description=meta.get("description") or default_desc,
+            tags=list(meta.get("tags", [])) or ([default_type] if default_type != "unknown" else []),
             depends_on=list(meta.get("depends_on", [])),
             resource=meta.get("resource"),
             timestamp=str(meta.get("timestamp")) if meta.get("timestamp") else None,
@@ -69,12 +75,17 @@ def _parse_okf_file_detail(file_path: Path, bundle_root: Path) -> Optional[OKFFi
         meta = post.metadata
         rel_path = str(file_path.relative_to(bundle_root)).replace("\\", "/")
 
+        fname_lower = file_path.name.lower()
+        default_type = "index" if fname_lower == "index.md" else ("changelog" if fname_lower == "log.md" else "unknown")
+        default_title = "Master Project Index" if fname_lower == "index.md" else ("Bundle Audit Log" if fname_lower == "log.md" else file_path.stem)
+        default_desc = "Table of contents for the knowledge bundle." if fname_lower == "index.md" else ("History log of bundle generation." if fname_lower == "log.md" else None)
+
         return OKFFileDetail(
             filename=rel_path,
-            type=str(meta.get("type", "unknown")),
-            title=str(meta.get("title", file_path.stem)),
-            description=meta.get("description"),
-            tags=list(meta.get("tags", [])),
+            type=str(meta.get("type") or default_type),
+            title=str(meta.get("title") or default_title),
+            description=meta.get("description") or default_desc,
+            tags=list(meta.get("tags", [])) or ([default_type] if default_type != "unknown" else []),
             depends_on=list(meta.get("depends_on", [])),
             resource=meta.get("resource"),
             timestamp=str(meta.get("timestamp")) if meta.get("timestamp") else None,

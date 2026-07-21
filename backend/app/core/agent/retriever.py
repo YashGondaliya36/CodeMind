@@ -122,13 +122,34 @@ def retrieve_relevant_files(
     return results
 
 
+# Synonym expansion dictionary for high-precision query expansion
+_SYNONYM_MAP = {
+    "auth": {"authentication", "login", "jwt", "token", "password", "user"},
+    "db": {"database", "models", "schema", "sql", "orm", "store"},
+    "api": {"route", "endpoint", "fastapi", "router", "request", "response"},
+    "test": {"tests", "testing", "pytest", "unit", "mock"},
+    "graph": {"knowledge", "nodes", "edges", "network", "builder"},
+    "pipeline": {"flow", "steps", "stage", "process", "workflow", "trainer"},
+    "eval": {"evaluation", "metrics", "benchmark", "accuracy"},
+    "chat": {"agent", "prompt", "llm", "conversation", "stream"},
+}
+
+
 def _extract_keywords(text: str) -> set[str]:
     """
-    Tokenise a question into meaningful keywords.
+    Tokenise a question into meaningful keywords + expand synonyms for short queries.
     Lowercases, removes punctuation, strips stop words.
     """
     tokens = re.findall(r"\b\w+\b", text.lower())
-    return {t for t in tokens if t not in _STOP_WORDS and len(t) > 2}
+    base_keywords = {t for t in tokens if t not in _STOP_WORDS and len(t) > 2}
+
+    # Expand synonyms for short or concise keywords
+    expanded = set(base_keywords)
+    for kw in base_keywords:
+        if kw in _SYNONYM_MAP:
+            expanded.update(_SYNONYM_MAP[kw])
+
+    return expanded
 
 
 def _score_file(meta: OKFFileMeta, keywords: set[str]) -> float:

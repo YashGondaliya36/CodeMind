@@ -320,10 +320,42 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
     }
   }
 
+  const handleExportMarkdown = () => {
+    if (messages.length === 0 || !repoName) return;
+    let md = `# CodeMind Architecture Consultation — ${repoName}\n\n`;
+    md += `*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`;
+
+    pairs.forEach((pair, idx) => {
+      md += `## Query ${idx + 1}: ${pair.user.content}\n\n`;
+      if (pair.agent) {
+        md += `${pair.agent.content}\n\n`;
+        if (pair.agent.sources && pair.agent.sources.length > 0) {
+          md += `### Sources Used\n`;
+          pair.agent.sources.forEach((s) => {
+            md += `- **${s.title}** (\`${s.filename}\`)\n`;
+          });
+          md += `\n`;
+        }
+        if (pair.agent.metrics) {
+          md += `*Metrics: Tokens IN: ${pair.agent.metrics.tokensIn ?? 0} | Tokens OUT: ${pair.agent.metrics.tokensOut ?? 0}*\n\n`;
+        }
+      }
+      md += `---\n\n`;
+    });
+
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `codemind-session-${repoName}-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex flex-col h-full font-mono bg-brutal-white border-3 border-brutal-black shadow-brutal">
       {/* Input Area */}
-      <div className="p-4 border-b-3 border-brutal-black bg-brutal-gray flex gap-2 shrink-0">
+      <div className="p-4 border-b-3 border-brutal-black bg-brutal-gray flex gap-2 shrink-0 items-center">
         <input
           type="text"
           value={input}
@@ -337,10 +369,19 @@ export function ChatInterface({ repoName }: ChatInterfaceProps) {
           variant="orange"
           onClick={handleSend}
           disabled={isLoading || !input.trim()}
-          className="px-8"
+          className="px-6"
         >
           SEND
         </BrutalistButton>
+        {messages.length > 0 && (
+          <button
+            onClick={handleExportMarkdown}
+            title="Export conversation as Markdown documentation"
+            className="font-mono text-xs bg-brutal-green px-3 py-3 border-3 border-brutal-black font-black hover:bg-brutal-white shadow-brutal transition-transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            EXPORT .MD
+          </button>
+        )}
       </div>
 
       {/* Chat Area */}

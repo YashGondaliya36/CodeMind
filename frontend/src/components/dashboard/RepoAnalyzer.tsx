@@ -169,19 +169,19 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3">
+      <div className="flex gap-2.5">
         <BrutalistButton
           onClick={handleAnalyze}
           variant="orange"
           disabled={isRunning}
-          className="flex-1 text-sm"
+          className="flex-1 text-xs md:text-sm"
         >
           {isRunning ? "ANALYZING..." : isGitHub ? "⬇ CLONE & ANALYZE" : "GENERATE NEW"}
         </BrutalistButton>
         <BrutalistButton
           onClick={() => onBundleReady(repoName)}
           variant="acid"
-          className="shrink-0 text-sm"
+          className="shrink-0 text-xs md:text-sm"
         >
           LOAD EXISTING
         </BrutalistButton>
@@ -192,9 +192,9 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
         <div className="border-2 border-brutal-black bg-brutal-black text-white overflow-hidden">
 
           {/* Header Bar */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 text-xs">
             <div className="flex items-center gap-2">
-              <span className={`text-sm font-black ${STATUS_COLORS[statusKey] ?? "text-white"}`}>
+              <span className={`font-black ${STATUS_COLORS[statusKey] ?? "text-white"}`}>
                 {STATUS_ICONS[statusKey] ?? "○"} {statusKey.toUpperCase()}
               </span>
               {status.total_files > 0 && (
@@ -203,9 +203,20 @@ export function RepoAnalyzer({ onBundleReady }: RepoAnalyzerProps) {
                 </span>
               )}
             </div>
-            <span className={`text-sm font-black tabular-nums ${progressPct === 100 ? "text-green-400" : "text-white"}`}>
-              {progressPct}%
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`font-black tabular-nums ${progressPct === 100 ? "text-green-400" : "text-white"}`}>
+                {progressPct}%
+              </span>
+              {(statusKey === "done" || statusKey === "error") && (
+                <button
+                  onClick={() => setStatus(null)}
+                  className="text-[10px] text-white/40 hover:text-white border border-white/20 px-1 rounded ml-1"
+                  title="Dismiss build log"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Animated Progress Bar */}

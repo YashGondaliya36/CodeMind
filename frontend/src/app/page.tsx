@@ -22,7 +22,7 @@ function DashboardContent() {
   }, [activeRepo, repoFromUrl, router]);
 
   return (
-    <main className="h-screen p-4 md:p-8 max-w-[1600px] mx-auto flex flex-col overflow-hidden">
+    <main className="h-screen p-4 md:p-6 max-w-[1700px] mx-auto flex flex-col overflow-hidden">
       
       {/* HEADER SECTION */}
       <header className="shrink-0 mb-6 flex items-center justify-between">
@@ -38,29 +38,29 @@ function DashboardContent() {
         </div>
       </header>
 
-      {/* MAIN GRID */}
-      <div className="flex-1 grid grid-cols-12 gap-4 md:gap-8 min-h-0">
+      {/* MAIN GRID — Balanced 4-col (34%) / 8-col (66%) split at max-w 1700px */}
+      <div className="flex-1 grid grid-cols-12 gap-4 md:gap-6 min-h-0">
         
         {/* LEFT COLUMN: Repo Analysis & File Explorer (4 columns) */}
-        <div className="col-span-4 flex flex-col gap-4 md:gap-8 h-full min-h-0">
+        <div className="col-span-12 lg:col-span-4 xl:col-span-4 flex flex-col gap-4 h-full min-h-0">
           
-          <BrutalistCard className="shrink-0">
-            <BrutalistCardHeader>
-              <BrutalistCardTitle>1. ANALYZE REPO</BrutalistCardTitle>
+          <BrutalistCard className="shrink-0 max-h-[52%] flex flex-col min-h-0">
+            <BrutalistCardHeader className="py-2.5 px-4 shrink-0">
+              <BrutalistCardTitle className="text-base">1. ANALYZE REPO</BrutalistCardTitle>
             </BrutalistCardHeader>
-            <BrutalistCardContent className="pt-6">
-              <p className="font-mono text-xs mb-4 text-brutal-black/70">
+            <BrutalistCardContent className="p-4 pt-3 overflow-y-auto">
+              <p className="font-mono text-xs mb-3 text-brutal-black/70">
                 Paste a <span className="font-black">GitHub URL</span> or local path to generate an OKF knowledge bundle.
               </p>
               <RepoAnalyzer onBundleReady={(repo) => setActiveRepo(repo)} />
             </BrutalistCardContent>
           </BrutalistCard>
 
-          <BrutalistCard className="flex-1 flex flex-col min-h-0">
-            <BrutalistCardHeader>
-              <BrutalistCardTitle>2. OKF BUNDLE</BrutalistCardTitle>
+          <BrutalistCard className="flex-1 flex flex-col min-h-[220px] overflow-hidden">
+            <BrutalistCardHeader className="py-2.5 px-4 shrink-0">
+              <BrutalistCardTitle className="text-base">2. OKF BUNDLE</BrutalistCardTitle>
             </BrutalistCardHeader>
-            <BrutalistCardContent className="pt-6 flex-1 overflow-auto">
+            <BrutalistCardContent className="p-4 pt-3 flex-1 overflow-hidden flex flex-col">
               <FileExplorer repoName={activeRepo} />
             </BrutalistCardContent>
           </BrutalistCard>
@@ -68,7 +68,7 @@ function DashboardContent() {
         </div>
 
         {/* RIGHT COLUMN: Graph & Chat (8 columns) */}
-        <div className="col-span-8 flex flex-col gap-4 md:gap-8 h-full min-h-0">
+        <div className="col-span-12 lg:col-span-8 xl:col-span-8 flex flex-col gap-4 h-full min-h-0">
           
           <BrutalistCard className="h-full flex flex-col">
             <BrutalistCardHeader className="flex flex-row items-center justify-between">
