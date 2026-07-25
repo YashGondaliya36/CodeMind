@@ -1,0 +1,2 @@
+[console_scripts]
+codemind = codemind_okf.cli:app
