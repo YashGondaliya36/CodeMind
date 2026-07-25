@@ -40,20 +40,45 @@ def write_okf_file(
     return output_path
 
 
+def _sanitize_yaml_str(text: str, max_len: int = 500) -> str:
+    """Collapse multi-line text to a single quoted YAML value safe string."""
+    # Take first meaningful paragraph, strip =====/----- underlines
+    lines = [l for l in text.strip().splitlines() if not set(l.strip()) <= {"=", "-", "#"}]
+    single = " ".join(l.strip() for l in lines if l.strip())
+    single = single[:max_len]
+    # Escape internal double-quotes for YAML double-quote wrapping
+    single = single.replace('"', "'")
+    return single
+
+
+def _sanitize_yaml_item(val: str) -> str:
+    """Sanitize and quote YAML list items that contain reserved characters like @, :, #, etc."""
+    val = str(val).strip().replace('"', "'")
+    if not val:
+        return '""'
+    if any(c in val for c in (":", "@", "#", "{", "}", "[", "]", ",", "&", "*", "!", "|", ">", "%", " ", "-")):
+        return f'"{val}"'
+    return val
+
+
 def _render(parsed: ParsedFile, summary: ModuleSummary) -> str:
     """Render the full OKF Markdown file with YAML frontmatter."""
     today = date.today().isoformat()
 
-    tags_yaml = "\n".join(f"  - {t}" for t in summary.tags)
+    tags_yaml = "\n".join(f"  - {_sanitize_yaml_item(t)}" for t in summary.tags)
     key_funcs_yaml = (
-        "\n".join(f"  - {fn}" for fn in summary.key_functions)
+        "\n".join(f"  - {_sanitize_yaml_item(fn)}" for fn in summary.key_functions)
         if summary.key_functions else "  []"
     )
 
+    # CRITICAL: description and title MUST be safe YAML strings
+    safe_title = _sanitize_yaml_item(summary.title)
+    safe_description = _sanitize_yaml_str(summary.description)
+
     frontmatter = f"""---
 type: {summary.type}
-title: {summary.title}
-description: {summary.description}
+title: {safe_title}
+description: "{safe_description}"
 resource: {parsed.file_path}
 tags:
 {tags_yaml if tags_yaml else "  []"}
@@ -87,7 +112,8 @@ timestamp: {today}
             args_str = ", ".join(fn.args[:5])
             body_lines.append(f"#### `{async_tag}{fn.name}({args_str})`")
             if fn.docstring:
-                body_lines.append(fn.docstring[:200])
+                # Expanded to 400 chars for richer AI context
+                body_lines.append(fn.docstring.strip()[:400])
             body_lines.append("")
 
     if parsed.classes:
@@ -97,9 +123,9 @@ timestamp: {today}
             bases = f" ← `{', '.join(cls.base_classes)}`" if cls.base_classes else ""
             body_lines.append(f"#### `{cls.name}`{bases}")
             if cls.docstring:
-                body_lines.append(cls.docstring[:200])
+                body_lines.append(cls.docstring.strip()[:400])
             if cls.methods:
-                method_names = ", ".join(f"`{m.name}`" for m in cls.methods[:6])
+                method_names = ", ".join(f"`{m.name}`" for m in cls.methods[:8])
                 body_lines.append(f"**Methods:** {method_names}")
             body_lines.append("")
 

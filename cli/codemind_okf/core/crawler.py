@@ -37,6 +37,11 @@ SKIP_FILENAMES = {
 MIN_FILE_SIZE_BYTES = 100
 
 
+import hashlib
+import json
+from codemind_okf.core.file_utils import safe_write
+
+
 @dataclass
 class CrawledFile:
     """Represents a single source file ready for analysis."""
@@ -45,6 +50,7 @@ class CrawledFile:
     language: str
     size_bytes: int
     extension: str
+    sha256: str = ""
 
 
 @dataclass
@@ -58,6 +64,31 @@ class CrawlResult:
     @property
     def total_files(self) -> int:
         return len(self.files)
+
+
+def compute_file_hash(path: Path) -> str:
+    """Compute SHA-256 hash of a file's raw content."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return ""
+
+
+def load_checksums(bundle_root: Path) -> dict[str, str]:
+    """Load cached checksum map from .okf/.checksums.json."""
+    cache_file = bundle_root / ".checksums.json"
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_checksums(bundle_root: Path, checksums: dict[str, str]) -> None:
+    """Save updated checksum map to .okf/.checksums.json."""
+    cache_file = bundle_root / ".checksums.json"
+    safe_write(cache_file, json.dumps(checksums, indent=2))
 
 
 def crawl(root: Path, languages: list[str] | None = None) -> CrawlResult:
@@ -102,23 +133,45 @@ def crawl(root: Path, languages: list[str] | None = None) -> CrawlResult:
         lang = _extension_to_language(file_path.suffix)
         rel = str(file_path.relative_to(root)).replace("\\", "/")
 
+        sha = compute_file_hash(file_path)
+
         result.files.append(CrawledFile(
             path=file_path,
             relative_path=rel,
             language=lang,
             size_bytes=size,
             extension=file_path.suffix,
+            sha256=sha,
         ))
 
     return result
 
 
 def _is_in_skip_dir(file_path: Path, repo_root: Path) -> bool:
+    """Check if file resides in a skip directory, site-packages, or virtual environment."""
     try:
-        parts = file_path.relative_to(repo_root).parts
+        rel_parts = file_path.relative_to(repo_root).parts
     except ValueError:
         return False
-    return any(part in SKIP_DIRS or part.endswith(".egg-info") for part in parts)
+
+    # Check directory parts leading up to the file
+    for i, part in enumerate(rel_parts[:-1]):
+        lower = part.lower()
+
+        # Fixed skip dir list or egg-info
+        if lower in SKIP_DIRS or lower.endswith(".egg-info"):
+            return True
+
+        # Common package/vendor dirs
+        if lower in ("site-packages", "dist-packages", "node_modules", "vendor", ".okf"):
+            return True
+
+        # Smart VirtualEnv check: if directory contains 'pyvenv.cfg' or 'activate_this.py'
+        dir_path = repo_root.joinpath(*rel_parts[:i+1])
+        if (dir_path / "pyvenv.cfg").exists() or (dir_path / "Scripts" / "activate").exists() or (dir_path / "bin" / "activate").exists():
+            return True
+
+    return False
 
 
 def _extension_to_language(ext: str) -> str:

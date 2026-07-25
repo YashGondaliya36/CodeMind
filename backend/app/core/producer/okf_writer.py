@@ -57,6 +57,25 @@ def write_okf_file(
     return output_path
 
 
+def _sanitize_yaml_str(text: str, max_len: int = 500) -> str:
+    """Collapse multi-line text to a single quoted YAML value safe string."""
+    lines = [l for l in text.strip().splitlines() if not set(l.strip()) <= {"=", "-", "#"}]
+    single = " ".join(l.strip() for l in lines if l.strip())
+    single = single[:max_len]
+    single = single.replace('"', "'")
+    return single
+
+
+def _sanitize_yaml_item(val: str) -> str:
+    """Sanitize and quote YAML list items that contain reserved characters like @, :, #, etc."""
+    val = str(val).strip().replace('"', "'")
+    if not val:
+        return '""'
+    if any(c in val for c in (":", "@", "#", "{", "}", "[", "]", ",", "&", "*", "!", "|", ">", "%", " ", "-")):
+        return f'"{val}"'
+    return val
+
+
 def _render_okf_file(parsed: ParsedFile, summary: ModuleSummary) -> str:
     """
     Render the full OKF Markdown file content.
@@ -65,20 +84,19 @@ def _render_okf_file(parsed: ParsedFile, summary: ModuleSummary) -> str:
     today = date.today().isoformat()
 
     # ── YAML Frontmatter ──────────────────────────────────────────────────────
-    tags_yaml = "\n".join(f"  - {tag}" for tag in summary.tags)
+    tags_yaml = "\n".join(f"  - {_sanitize_yaml_item(tag)}" for tag in summary.tags)
     key_funcs_yaml = (
-        "\n".join(f"  - {fn}" for fn in summary.key_functions)
-        if summary.key_functions else "  []"
-    )
-    depends_yaml = (
-        "\n".join(f"  - {dep}" for dep in summary.key_functions[:3])
+        "\n".join(f"  - {_sanitize_yaml_item(fn)}" for fn in summary.key_functions)
         if summary.key_functions else "  []"
     )
 
+    safe_title = _sanitize_yaml_item(summary.title)
+    safe_description = _sanitize_yaml_str(summary.description)
+
     frontmatter = f"""---
 type: {summary.type}
-title: {summary.title}
-description: {summary.description}
+title: {safe_title}
+description: "{safe_description}"
 resource: {parsed.file_path}
 tags:
 {tags_yaml if tags_yaml else "  []"}

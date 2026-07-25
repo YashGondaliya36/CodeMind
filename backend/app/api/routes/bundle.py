@@ -97,6 +97,7 @@ async def get_graph(repo_name: str):
     return build_graph(repo_name)
 
 
+#delete repo bundle    
 @router.delete(
     "/{repo_name}",
     summary="Delete a repo's OKF bundle",

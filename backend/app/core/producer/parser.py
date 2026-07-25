@@ -198,92 +198,103 @@ def _extract_python_imports(tree: ast.AST) -> list[str]:
     return sorted(set(imports))
 
 
-# ── JavaScript / TypeScript Parser (Regex-based) ─────────────────────────────
+# ── JavaScript / TypeScript Parser ─────────────────────────────────────────────
+
+def _make_ts_query(lang: Any, pattern: str) -> Any:
+    """Create a Tree-sitter query compatibly across all API versions (0.21.x -> 0.26.x)."""
+    try:
+        from tree_sitter import Query
+        return Query(lang, pattern)
+    except Exception:
+        if hasattr(lang, "query"):
+            return lang.query(pattern)
+        raise AttributeError("Tree-sitter Language object has no query method and Query class unavailable.")
+
+
+def _parse_js_ts_regex_fallback(source: str, file_path: str, language: str, line_count: int) -> ParsedFile:
+    """Regex-based fallback for JS/TS parsing."""
+    functions = _extract_js_functions_regex(source)
+    classes = _extract_js_classes_regex(source)
+    imports = _extract_js_imports_regex(source)
+    return ParsedFile(
+        file_path=file_path, language=language, module_docstring=None,
+        imports=imports, functions=functions, classes=classes, line_count=line_count,
+    )
+
 
 def _parse_js_ts(
     source: str, file_path: str, language: str, line_count: int
 ) -> ParsedFile:
     """
-    Parse JS/TS files using Tree-sitter if available, otherwise fallback to Regex.
+    Parse JS/TS files using Tree-sitter if available, with automatic fallback to Regex.
     """
     if not TS_AVAILABLE:
-        functions = _extract_js_functions_regex(source)
-        classes = _extract_js_classes_regex(source)
-        imports = _extract_js_imports_regex(source)
+        return _parse_js_ts_regex_fallback(source, file_path, language, line_count)
+
+    try:
+        if file_path.endswith(".ts"):
+            lang = Language(tstypescript.language_typescript())
+        elif file_path.endswith(".tsx"):
+            lang = Language(tstypescript.language_tsx())
+        else:
+            lang = Language(tsjavascript.language())
+
+        parser = Parser(lang)
+        tree = parser.parse(source.encode("utf8"))
+
+        import_query = _make_ts_query(lang, "(import_statement source: (string) @import)")
+        function_query = _make_ts_query(lang, """
+            (function_declaration name: (identifier) @name parameters: (formal_parameters) @params)
+            (lexical_declaration (variable_declarator name: (identifier) @name value: (arrow_function parameters: (formal_parameters) @params)))
+            (lexical_declaration (variable_declarator name: (identifier) @name value: (function parameters: (formal_parameters) @params)))
+        """)
+        class_query = _make_ts_query(lang, "(class_declaration name: (identifier) @name)")
+
+        imports = []
+        for match in import_query.matches(tree.root_node):
+            for node in match[1].values():
+                if isinstance(node, list):
+                    node = node[0]
+                val = node.text.decode("utf8")
+                imports.append(val.strip("'\""))
+        imports = sorted(set(imports))
+
+        functions = []
+        for match in function_query.matches(tree.root_node):
+            nodes = match[1]
+            name_node = nodes.get("name")
+            params_node = nodes.get("params")
+            if isinstance(name_node, list): name_node = name_node[0]
+            if isinstance(params_node, list): params_node = params_node[0]
+            
+            if name_node and params_node:
+                name = name_node.text.decode("utf8")
+                params = [p.strip() for p in params_node.text.decode("utf8").strip("()").split(",") if p.strip()]
+                is_async = b"async" in source[:name_node.start_byte][-20:].lower()
+                functions.append(FunctionInfo(
+                    name=name, docstring=None, args=params, 
+                    is_async=is_async, line_number=name_node.start_point[0] + 1
+                ))
+
+        classes = []
+        for match in class_query.matches(tree.root_node):
+            nodes = match[1]
+            name_node = nodes.get("name")
+            if isinstance(name_node, list): name_node = name_node[0]
+            if name_node:
+                classes.append(ClassInfo(
+                    name=name_node.text.decode("utf8"), docstring=None, 
+                    base_classes=[], methods=[], line_number=name_node.start_point[0] + 1
+                ))
+
         return ParsedFile(
             file_path=file_path, language=language, module_docstring=None,
             imports=imports, functions=functions, classes=classes, line_count=line_count,
         )
 
-    # Initialize language based on file extension
-    if file_path.endswith(".ts"):
-        lang = Language(tstypescript.language_typescript())
-    elif file_path.endswith(".tsx"):
-        lang = Language(tstypescript.language_tsx())
-    else:
-        lang = Language(tsjavascript.language())
-
-    parser = Parser(lang)
-    tree = parser.parse(source.encode("utf8"))
-
-    # Define queries
-    import_query = lang.query("(import_statement source: (string) @import)")
-    
-    function_query = lang.query("""
-        (function_declaration name: (identifier) @name parameters: (formal_parameters) @params)
-        (lexical_declaration (variable_declarator name: (identifier) @name value: (arrow_function parameters: (formal_parameters) @params)))
-        (lexical_declaration (variable_declarator name: (identifier) @name value: (function parameters: (formal_parameters) @params)))
-    """)
-    
-    class_query = lang.query("""
-        (class_declaration name: (identifier) @name)
-    """)
-
-    imports = []
-    for match in import_query.matches(tree.root_node):
-        for node in match[1].values():
-            if isinstance(node, list):
-                node = node[0]
-            val = node.text.decode("utf8")
-            imports.append(val.strip("'\""))
-    imports = sorted(set(imports))
-
-    functions = []
-    for match in function_query.matches(tree.root_node):
-        nodes = match[1]
-        name_node = nodes.get("name")
-        params_node = nodes.get("params")
-        if isinstance(name_node, list): name_node = name_node[0]
-        if isinstance(params_node, list): params_node = params_node[0]
-        
-        if name_node and params_node:
-            name = name_node.text.decode("utf8")
-            params = params_node.text.decode("utf8").strip("()").split(",")
-            params = [p.strip() for p in params if p.strip()]
-            
-            # Simple async check on the raw text
-            is_async = b"async" in source[:name_node.start_byte][-20:].lower()
-            
-            functions.append(FunctionInfo(
-                name=name, docstring=None, args=params, 
-                is_async=is_async, line_number=name_node.start_point[0] + 1
-            ))
-
-    classes = []
-    for match in class_query.matches(tree.root_node):
-        nodes = match[1]
-        name_node = nodes.get("name")
-        if isinstance(name_node, list): name_node = name_node[0]
-        if name_node:
-            classes.append(ClassInfo(
-                name=name_node.text.decode("utf8"), docstring=None, 
-                base_classes=[], methods=[], line_number=name_node.start_point[0] + 1
-            ))
-
-    return ParsedFile(
-        file_path=file_path, language=language, module_docstring=None,
-        imports=imports, functions=functions, classes=classes, line_count=line_count,
-    )
+    except Exception:
+        # Fallback to regex parsing on any tree-sitter exception
+        return _parse_js_ts_regex_fallback(source, file_path, language, line_count)
 
 
 def _extract_js_functions_regex(source: str) -> list[FunctionInfo]:

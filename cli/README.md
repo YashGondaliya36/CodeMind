@@ -58,6 +58,20 @@ codemind status
 codemind status /path/to/project
 ```
 
+### `codemind watch`
+Watches the project directory for real-time file changes and updates `.okf/` incrementally in milliseconds.
+
+```bash
+codemind watch                          # Watch current directory
+```
+
+### `codemind audit`
+Performs an architectural health and code density audit of your codebase using your OKF bundle.
+
+```bash
+codemind audit                          # Audit current project codebase
+```
+
 ### `codemind mcp`
 Launches the Model Context Protocol (MCP) server over STDIO.
 

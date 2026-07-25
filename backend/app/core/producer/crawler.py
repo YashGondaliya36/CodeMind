@@ -119,12 +119,26 @@ def crawl_repo(repo_path: Path, languages: list[str]) -> CrawlResult:
 
 
 def _is_in_skip_dir(file_path: Path, repo_root: Path) -> bool:
-    """Return True if any part of the file's path is a skip directory."""
+    """Return True if file resides in a skip directory, site-packages, or virtual environment."""
     try:
-        parts = file_path.relative_to(repo_root).parts
+        rel_parts = file_path.relative_to(repo_root).parts
     except ValueError:
         return False
-    return any(part in SKIP_DIRS or part.endswith(".egg-info") for part in parts)
+
+    for i, part in enumerate(rel_parts[:-1]):
+        lower = part.lower()
+
+        if lower in SKIP_DIRS or lower.endswith(".egg-info"):
+            return True
+
+        if lower in ("site-packages", "dist-packages", "node_modules", "vendor", ".okf"):
+            return True
+
+        dir_path = repo_root.joinpath(*rel_parts[:i+1])
+        if (dir_path / "pyvenv.cfg").exists() or (dir_path / "Scripts" / "activate").exists() or (dir_path / "bin" / "activate").exists():
+            return True
+
+    return False
 
 
 def _extension_to_language(ext: str) -> str:

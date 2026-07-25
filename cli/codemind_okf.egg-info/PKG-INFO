@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: codemind-okf
-Version: 1.0.0
+Version: 1.0.2
 Summary: CodeMind OKF CLI — Generate AI-ready knowledge bundles for any codebase. Works with Cursor, Antigravity, GitHub Copilot, and any MCP-compatible AI IDE.
 Author-email: Yash Gondaliya <yashGondaliya36@gmail.com>
 License: MIT
@@ -91,6 +91,20 @@ Show the current bundle statistics.
 ```bash
 codemind status
 codemind status /path/to/project
+```
+
+### `codemind watch`
+Watches the project directory for real-time file changes and updates `.okf/` incrementally in milliseconds.
+
+```bash
+codemind watch                          # Watch current directory
+```
+
+### `codemind audit`
+Performs an architectural health and code density audit of your codebase using your OKF bundle.
+
+```bash
+codemind audit                          # Audit current project codebase
 ```
 
 ### `codemind mcp`

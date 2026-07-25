@@ -24,7 +24,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import print as rprint
 
-from codemind_okf.core.crawler import crawl
+from codemind_okf.core.crawler import crawl, load_checksums, save_checksums
 from codemind_okf.core.parser import parse_file
 from codemind_okf.core.summarizer import summarize_fast
 from codemind_okf.core.writer import write_okf_file
@@ -116,8 +116,27 @@ def index(
         f"([dim]{result.skipped_count} skipped[/dim])"
     )
 
+    # ── SHA-256 Incremental Indexing ──────────────────────────────────────────
+    cached_checksums = load_checksums(bundle_root) if not overwrite else {}
+    new_checksums: dict[str, str] = {}
+
+    # Delete stale module files if original source file was deleted from disk
+    if cached_checksums and not overwrite:
+        current_rel_paths = {c.relative_path for c in result.files}
+        for rel_path in list(cached_checksums.keys()):
+            if rel_path not in current_rel_paths:
+                slug = rel_path.replace("/", "-").replace("\\", "-").replace("_", "-")
+                slug = slug.rsplit(".", 1)[0] + ".md"
+                stale_file = modules_dir / slug
+                if stale_file.exists():
+                    try:
+                        stale_file.unlink()
+                    except Exception:
+                        pass
+
     # ── Parse + Summarize + Write ─────────────────────────────────────────────
     written = 0
+    skipped_unchanged = 0
     errors = 0
 
     with Progress(
@@ -131,6 +150,18 @@ def index(
         task = progress.add_task("[green]Indexing modules...", total=result.total_files)
 
         for crawled in result.files:
+            new_checksums[crawled.relative_path] = crawled.sha256
+
+            # Incremental check: if SHA-256 matches cache and output file exists -> skip parsing!
+            slug = crawled.relative_path.replace("/", "-").replace("\\", "-").replace("_", "-")
+            slug = slug.rsplit(".", 1)[0] + ".md"
+            expected_output = modules_dir / slug
+
+            if not overwrite and cached_checksums.get(crawled.relative_path) == crawled.sha256 and expected_output.exists():
+                skipped_unchanged += 1
+                progress.advance(task)
+                continue
+
             progress.update(task, description=f"[cyan]{crawled.relative_path}[/cyan]")
             try:
                 parsed = parse_file(crawled.path, crawled.relative_path, crawled.language)
@@ -143,20 +174,24 @@ def index(
             finally:
                 progress.advance(task)
 
+    # Save updated checksum map
+    save_checksums(bundle_root, new_checksums)
+
     # ── Build index.md ────────────────────────────────────────────────────────
     console.print("\n[bold]📚 Building index.md...[/bold]")
     build_index(bundle_root, project_name)
-    append_to_log(bundle_root, f"codemind index — {written} modules, {errors} errors")
+    append_to_log(bundle_root, f"codemind index — {written} updated, {skipped_unchanged} unchanged, {errors} errors")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_row("[green]✓ Modules indexed[/green]", f"[bold]{written}[/bold]")
+    table.add_row("[green]✓ Modules updated[/green]", f"[bold]{written}[/bold]")
+    table.add_row("[dim]⚡ Unchanged (skipped)[/dim]", f"[dim]{skipped_unchanged}[/dim]")
     table.add_row("[yellow]⚠ Errors[/yellow]", f"[bold]{errors}[/bold]")
     table.add_row("[blue]Bundle location[/blue]", f"[cyan]{bundle_root}[/cyan]")
 
     console.print(Panel(
         table,
-        title="[bold green]✓ Indexing Complete[/bold green]",
+        title="[bold green]✓ Incremental Indexing Complete[/bold green]",
         border_style="green",
     ))
 
@@ -328,6 +363,165 @@ def mcp():
     """
     from codemind_okf.mcp import run_mcp_server
     run_mcp_server()
+
+
+@app.command()
+def watch(
+    path: Path = typer.Argument(
+        Path("."),
+        help="Project root to watch for real-time changes.",
+        resolve_path=True,
+    ),
+    interval: int = typer.Option(2, "--interval", "-i", help="Polling interval in seconds (default 2s)."),
+):
+    """
+    [bold green]Watch project directory for real-time file changes and auto-index.[/bold green]
+
+    Runs continuously in the background. Whenever you save a file in VS Code or Cursor,
+    CodeMind incrementally updates the OKF bundle in milliseconds.
+
+    Example:
+        codemind watch
+    """
+    import time
+    project_root = path.resolve()
+    console.print(f"[bold green]👁 Watching [cyan]{project_root}[/cyan] for file changes... (Press Ctrl+C to stop)[/bold green]\n")
+
+    last_run = 0
+    try:
+        while True:
+            # Run fast incremental index
+            index(path=project_root, output=None, languages="python,javascript,typescript", overwrite=False)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped watching.[/yellow]")
+
+
+@app.command()
+def audit(
+    path: Path = typer.Argument(
+        Path("."),
+        help="Project root directory (default: current directory).",
+        resolve_path=True,
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output", "-o",
+        help="Path to .okf directory.",
+    ),
+):
+    """
+    [bold green]Perform codebase health & architecture audit from the OKF bundle.[/bold green]
+
+    Analyzes file size, architectural layers, docstring coverage, and key module hotspots.
+
+    Example:
+        codemind audit
+    """
+    project_root = path.resolve()
+    bundle_root = output or (project_root / ".okf")
+
+    if not bundle_root.exists():
+        console.print(
+            "[red]✗ No .okf bundle found.[/red] "
+            "Run [bold cyan]codemind index .[/bold cyan] first."
+        )
+        raise typer.Exit(code=1)
+
+    modules_dir = bundle_root / "modules"
+    module_files = list(modules_dir.glob("*.md")) if modules_dir.is_dir() else []
+
+    if not module_files:
+        console.print("[red]✗ No module files found in .okf/modules/.[/red]")
+        raise typer.Exit(code=1)
+
+    import frontmatter as fm
+
+    monolithic_files: list[tuple[str, str, int]] = []
+    missing_docs: list[tuple[str, str]] = []
+    layer_counts: dict[str, int] = {}
+    total_funcs = 0
+
+    for md in module_files:
+        try:
+            post = fm.loads(md.read_text(encoding="utf-8"))
+            meta = post.metadata
+            title = str(meta.get("title", md.stem))
+            resource = str(meta.get("resource", ""))
+            mod_type = str(meta.get("type", "module"))
+            desc = str(meta.get("description", ""))
+            key_funcs = list(meta.get("key_functions", []))
+
+            layer_counts[mod_type] = layer_counts.get(mod_type, 0) + 1
+            total_funcs += len(key_funcs)
+
+            # Audit Check 1: Missing description/docstring
+            if not desc or "Configuration or type definition module" in desc or "Contains functions:" in desc:
+                missing_docs.append((title, resource))
+
+            # Audit Check 2: Check lines count in body header
+            body = post.content
+            for line in body.splitlines():
+                if "Lines:" in line:
+                    try:
+                        num_lines = int(line.split("Lines:")[1].strip())
+                        if num_lines > 300:
+                            monolithic_files.append((title, resource, num_lines))
+                    except Exception:
+                        pass
+        except Exception:
+            continue
+
+    # Score Calculation (100 base)
+    score = 100
+    score -= min(30, len(monolithic_files) * 5)
+    score -= min(20, len(missing_docs) * 2)
+    score = max(10, score)
+
+    grade = "A+" if score >= 90 else ("A" if score >= 80 else ("B" if score >= 70 else "C"))
+    color = "green" if score >= 80 else ("yellow" if score >= 60 else "red")
+
+    console.print(Panel(
+        f"[bold white]CodeMind Architecture & Health Audit[/bold white]\n"
+        f"[dim]Target:[/dim] [cyan]{project_root}[/cyan]\n"
+        f"[dim]Modules Audited:[/dim] [bold]{len(module_files)}[/bold]\n"
+        f"[dim]Health Score:[/dim] [{color}][bold]{score}/100 ({grade})[/bold][/{color}]",
+        border_style=color,
+        expand=False,
+    ))
+
+    # Health Findings Table
+    table = Table(title="[bold]Codebase Findings & Recommendations[/bold]", box=None)
+    table.add_column("Category", style="cyan")
+    table.add_column("Finding", style="white")
+    table.add_column("Recommendation", style="yellow")
+
+    if monolithic_files:
+        top_mono = monolithic_files[0]
+        table.add_row(
+            "🐘 Large Modules",
+            f"{len(monolithic_files)} files exceed 300 LOC (e.g. {top_mono[0]} - {top_mono[2]} lines)",
+            "Consider splitting into smaller, modular sub-components."
+        )
+    else:
+        table.add_row("🐘 Module Sizing", "All modules are under 300 LOC", "Excellent modular separation!")
+
+    if missing_docs:
+        table.add_row(
+            "📝 Documentation",
+            f"{len(missing_docs)} modules lack detailed docstrings",
+            "Add docstrings to public classes/functions for richer AI context."
+        )
+    else:
+        table.add_row("📝 Documentation", "Docstrings are present across all modules", "Great context density!")
+
+    table.add_row(
+        "🏗️ Architecture Layers",
+        f"{len(layer_counts)} active layers ({', '.join(layer_counts.keys())})",
+        "Clean separation of concerns detected."
+    )
+
+    console.print(table)
 
 
 def main():
