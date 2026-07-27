@@ -11,9 +11,10 @@ from app.core.bundle.manager import (
     list_bundle_files,
     get_file_detail,
     delete_bundle,
+    get_memory_log,
 )
 from app.core.bundle.graph_builder import build_graph
-from app.models.bundle import BundleIndex, OKFFileDetail, BundleGraph
+from app.models.bundle import BundleIndex, OKFFileDetail, BundleGraph, MemoryLog
 
 router = APIRouter()
 
@@ -111,3 +112,22 @@ async def remove_bundle(repo_name: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Bundle '{repo_name}' not found.")
     return {"message": f"Bundle '{repo_name}' deleted successfully."}
+
+
+@router.get(
+    "/{repo_name}/memory",
+    response_model=MemoryLog,
+    summary="Get AI memory log (decisions, tasks, context, bugs)",
+)
+async def get_bundle_memory(repo_name: str):
+    """
+    Returns the parsed AI persistent memory log (.okf/memory.md) for a repository.
+    Contains timestamped architectural decisions, task progress, and working context snapshots.
+    """
+    log = get_memory_log(repo_name)
+    if not log:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No memory.md found for bundle '{repo_name}'. Run `codemind index .` or use the `remember` MCP tool.",
+        )
+    return log

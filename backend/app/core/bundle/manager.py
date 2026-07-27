@@ -7,6 +7,7 @@ This is the "data access layer" for OKF files — no LLM calls here.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,7 @@ from typing import Optional
 import frontmatter  # python-frontmatter parses YAML + Markdown body
 
 from app.config import settings
-from app.models.bundle import OKFFileMeta, OKFFileDetail, BundleIndex
+from app.models.bundle import OKFFileMeta, OKFFileDetail, BundleIndex, MemoryEntry, MemoryLog
 from app.utils.file_utils import list_files, safe_read
 
 
@@ -225,3 +226,96 @@ def delete_bundle(repo_name: str) -> bool:
         return False
     delete_dir(bundle_root)
     return True
+
+
+def get_memory_log(repo_name: str) -> Optional[MemoryLog]:
+    """
+    Reads memory.md from a repo bundle (or root .okf/memory.md if repo_name is local)
+    and parses entries into a structured MemoryLog model.
+    """
+    bundle_root = get_bundle_path(repo_name)
+    mem_file = bundle_root / "memory.md"
+    if not mem_file.exists():
+        # Check .okf/memory.md in current directory or root
+        alt = Path.cwd() / ".okf" / "memory.md"
+        if alt.exists():
+            mem_file = alt
+        else:
+            return None
+
+    raw = safe_read(mem_file) or ""
+
+    section_headers = {
+        "decision":  "## 📌 Decisions",
+        "task":      "## ✅ Tasks",
+        "context":   "## 💬 Context Snapshots",
+        "bug":       "## 🐛 Bug Reports",
+    }
+
+    entries: list[MemoryEntry] = []
+    decisions_count = 0
+    tasks_count = 0
+    context_count = 0
+    bugs_count = 0
+
+    blocks = re.split(r"(?=### \[\d{4}-\d{2}-\d{2})", raw)
+    for block in blocks:
+        block = block.strip()
+        if not block or not block.startswith("### ["):
+            continue
+
+        block_pos = raw.find(block)
+        preceding = raw[:block_pos]
+        detected_type = "context"
+        for mtype, header in section_headers.items():
+            if header in preceding:
+                detected_type = mtype
+
+        # Parse header line: ### [2026-07-27 21:30 UTC] — Antigravity
+        lines = block.splitlines()
+        header_line = lines[0]
+        ts_match = re.search(r"\[(.*?)\]", header_line)
+        timestamp = ts_match.group(1) if ts_match else ""
+        ide_parts = header_line.split("—", 1)
+        ide = ide_parts[1].strip() if len(ide_parts) > 1 else "AI IDE"
+
+        # Parse tags line if present: **Tags:** `bot_shield` `ml`
+        tags = []
+        body_lines = []
+        for line in lines[1:]:
+            if line.strip().startswith("---"):
+                continue
+            if line.strip().startswith("**Tags:**"):
+                tags = re.findall(r"`(.*?)`", line)
+            else:
+                body_lines.append(line)
+
+        content_text = "\n".join(body_lines).strip()
+
+        if detected_type == "decision":
+            decisions_count += 1
+        elif detected_type == "task":
+            tasks_count += 1
+        elif detected_type == "context":
+            context_count += 1
+        elif detected_type == "bug":
+            bugs_count += 1
+
+        entries.append(MemoryEntry(
+            type=detected_type,
+            timestamp=timestamp,
+            ide=ide,
+            content=content_text,
+            tags=tags,
+        ))
+
+    return MemoryLog(
+        repo_name=repo_name,
+        total_entries=len(entries),
+        decisions_count=decisions_count,
+        tasks_count=tasks_count,
+        context_count=context_count,
+        bugs_count=bugs_count,
+        entries=entries,
+        raw_markdown=raw,
+    )

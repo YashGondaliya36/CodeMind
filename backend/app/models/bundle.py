@@ -63,3 +63,26 @@ class BundleGraph(BaseModel):
     repo_name: str
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+class MemoryEntry(BaseModel):
+    """Single AI memory entry parsed from memory.md."""
+
+    type: str                               # e.g. "decision" | "task" | "context" | "bug"
+    timestamp: str                          # ISO / formatted string
+    ide: str                                # e.g. "Antigravity", "Cursor"
+    content: str                            # Text description
+    tags: list[str] = []
+
+
+class MemoryLog(BaseModel):
+    """Response for GET /bundle/{repo_name}/memory."""
+
+    repo_name: str
+    total_entries: int
+    decisions_count: int
+    tasks_count: int
+    context_count: int
+    bugs_count: int
+    entries: list[MemoryEntry]
+    raw_markdown: str

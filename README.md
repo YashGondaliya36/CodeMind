@@ -50,8 +50,13 @@ codemind audit
 # 👁️ 4. Start real-time background file change watcher
 codemind watch
 
-# 🔌 5. Launch native STDIO MCP Server
+# 🔌# 5. Launch native STDIO MCP Server
 codemind mcp
+
+# 🧠 6. Manage AI Persistent Memory Log (.okf/memory.md)
+codemind memory show
+codemind memory ls
+codemind memory add "Decided on FastAPI + SQLite" --type decision
 ```
 
 ---
@@ -80,6 +85,8 @@ CodeMind exposes a production-grade **Model Context Protocol (MCP)** STDIO & HTT
 
 | MCP Tool | Function |
 |---|---|
+| 🧠 `remember(content, type)` | **Persists AI decisions, tasks, context & bugs into `.okf/memory.md` across sessions & IDEs** |
+| 🔄 `recall(query)` | **Retrieves relevant past memories at session start to eliminate context loss** |
 | 📚 `get_project_index` | Reads the master architecture map (`index.md`) |
 | 🔍 `search_bundle(query)` | Sub-word & token search across all project modules in milliseconds |
 | 📖 `read_module(slug)` | Reads specific module AST metadata, classes & function signatures |
@@ -90,10 +97,13 @@ CodeMind exposes a production-grade **Model Context Protocol (MCP)** STDIO & HTT
 
 ## 🔥 Key Features
 
-### 1. ⚡ SHA-256 Incremental Indexing (`.okf/.checksums.json`)
+### 1. 🧠 Cross-IDE AI Persistent Memory (`.okf/memory.md`)
+AI assistants in **Cursor**, **Antigravity**, **Zed**, and **Claude Desktop** call `remember()` to automatically log architectural decisions, tasks, context snapshots, and bug reports. When starting a new session or switching IDEs, the AI calls `recall()` to instantly restore past decision context — zero amnesia!
+
+### 2. ⚡ SHA-256 Incremental Indexing (`.okf/.checksums.json`)
 CodeMind tracks SHA-256 file fingerprints. On subsequent runs (`codemind index .`), unchanged files skip AST parsing instantly (**0.05s execution time**), updating only modified files and pruning deleted source modules.
 
-### 2. 🛡️ Codebase Health & Architecture Audit (`codemind audit`)
+### 3. 🛡️ Codebase Health & Architecture Audit (`codemind audit`)
 Analyzes module line density (>300 LOC monolithic warnings), docstring coverage density, and architectural layer distribution into a clean **Health Score (0-100 A+)**.
 
 <p align="center">
