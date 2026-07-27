@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -522,6 +523,136 @@ def audit(
     )
 
     console.print(table)
+
+
+memory_app = typer.Typer(
+    name="memory",
+    help="Manage the AI persistent memory log (.okf/memory.md).",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
+app.add_typer(memory_app, name="memory")
+
+
+def _resolve_memory_path(path: Path) -> Path | None:
+    """Find .okf/memory.md from a given project path, cwd, or parent directories."""
+    from codemind_okf.mcp import _get_memory_path
+    return _get_memory_path(str(path))
+
+
+@memory_app.command("show")
+def memory_show(
+    path: Path = typer.Argument(Path("."), help="Project root (default: current dir)", resolve_path=True),
+):
+    """Print the full contents of .okf/memory.md to the terminal."""
+    mem = _resolve_memory_path(path)
+    if not mem or not mem.exists():
+        rprint("[red]No memory file found.[/red] Run [bold]codemind index .[/bold] and let the AI use [bold]remember()[/bold] to populate it.")
+        raise typer.Exit(1)
+    console.print(Panel(
+        mem.read_text(encoding="utf-8"),
+        title="[bold cyan]🧠 .okf/memory.md[/bold cyan]",
+        border_style="cyan",
+        expand=False,
+    ))
+
+
+@memory_app.command("ls")
+def memory_ls(
+    path: Path = typer.Argument(Path("."), help="Project root (default: current dir)", resolve_path=True),
+):
+    """List a summary of all memory entries (count per type)."""
+    import re as _re
+    mem = _resolve_memory_path(path)
+    if not mem or not mem.exists():
+        rprint("[red]No memory file found.[/red] Run [bold]codemind index .[/bold] first.")
+        raise typer.Exit(1)
+
+    raw = mem.read_text(encoding="utf-8")
+    section_map = {
+        "📌 Decisions":        "decision",
+        "✅ Tasks":             "task",
+        "💬 Context Snapshots": "context",
+        "🐛 Bug Reports":       "bug",
+    }
+
+    table = Table(title="[bold cyan]🧠 Memory Summary[/bold cyan]", box=None, show_header=True)
+    table.add_column("Type", style="cyan", min_width=22)
+    table.add_column("Entries", justify="right", style="bold white")
+
+    total = 0
+    for label, _ in section_map.items():
+        count = len(_re.findall(r"^### \[", raw, _re.MULTILINE))
+        # Count entries per section by finding entries between section headers
+        # Simple heuristic: count ### lines after each ## header
+        pass
+
+    # More accurate: split by section
+    blocks = _re.split(r"\n## ", raw)
+    section_counts: dict[str, int] = {k: 0 for k in section_map.values()}
+    for block in blocks:
+        for label, stype in section_map.items():
+            clean_label = label.split(" ", 1)[1] if " " in label else label
+            if block.strip().startswith(clean_label) or block.strip().startswith(label):
+                count = len(_re.findall(r"^### \[", block, _re.MULTILINE))
+                section_counts[stype] = count
+                total += count
+
+    emoji_map = {"decision": "📌", "task": "✅", "context": "💬", "bug": "🐛"}
+    label_map = {"decision": "Decisions", "task": "Tasks", "context": "Context Snapshots", "bug": "Bug Reports"}
+    for stype, count in section_counts.items():
+        table.add_row(f"{emoji_map[stype]} {label_map[stype]}", str(count))
+
+    console.print(table)
+    console.print(f"\n[dim]Total entries: {total} · File: {mem}[/dim]")
+
+
+@memory_app.command("clear")
+def memory_clear(
+    path: Path = typer.Argument(Path("."), help="Project root (default: current dir)", resolve_path=True),
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Clear all entries from .okf/memory.md (keeps the template structure)."""
+    from codemind_okf.mcp import _MEMORY_TEMPLATE
+
+    mem = _resolve_memory_path(path)
+    if not mem or not mem.exists():
+        rprint("[red]No memory file found.[/red]")
+        raise typer.Exit(1)
+
+    if not confirm:
+        typer.confirm("⚠️  This will erase all AI memory entries. Continue?", abort=True)
+
+    mem.write_text(_MEMORY_TEMPLATE, encoding="utf-8")
+    rprint("[green]✓ Memory cleared.[/green] .okf/memory.md reset to blank template.")
+
+
+@memory_app.command("add")
+def memory_add(
+    content: str = typer.Argument(..., help="Memory content to add."),
+    memory_type: str = typer.Option("context", "--type", "-t", help="Type: decision | task | context | bug"),
+    ide: str = typer.Option("Human (CLI)", "--ide", help="IDE/author label"),
+    tags: list[str] = typer.Option([], "--tag", help="Tags (repeatable: --tag bot_shield --tag ml)"),
+    path: Path = typer.Argument(Path("."), help="Project root", resolve_path=True),
+):
+    """Manually add a memory entry to .okf/memory.md."""
+    from codemind_okf.mcp import tool_remember
+
+    result_raw = tool_remember(
+        content=content,
+        memory_type=memory_type,
+        ide=ide,
+        tags=tags or None,
+        repo_name=str(path),
+    )
+    try:
+        result = json.loads(result_raw)
+        if result.get("status") == "ok":
+            rprint(f"[green]✓ Memory saved:[/green] {result['message']}")
+        else:
+            rprint(f"[red]Error:[/red] {result.get('message', result_raw)}")
+    except json.JSONDecodeError:
+        rprint(f"[red]Error:[/red] {result_raw}")
 
 
 def main():

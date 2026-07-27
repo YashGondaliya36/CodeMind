@@ -33,150 +33,116 @@ Requires-Dist: pytest; extra == "dev"
 Requires-Dist: black; extra == "dev"
 Requires-Dist: ruff; extra == "dev"
 
-# CodeMind OKF CLI
+# 🧠 CodeMind OKF CLI
 
-> **Generate AI-ready knowledge bundles from any codebase. Works with Cursor, Antigravity, GitHub Copilot, and any MCP-compatible AI IDE.**
+> **Generate AI-ready knowledge bundles for any codebase.**  
+> Works with **Cursor**, **Antigravity IDE**, **Claude Desktop**, **GitHub Copilot**, and any **MCP-compatible** AI IDE.
 
-## Install
+<p align="center">
+  <a href="https://pypi.org/project/codemind-okf/"><img src="https://img.shields.io/pypi/v/codemind-okf.svg?color=blue&style=for-the-badge" alt="PyPI Version"></a>
+  <a href="https://pypi.org/project/codemind-okf/"><img src="https://img.shields.io/pypi/pyversions/codemind-okf.svg?style=for-the-badge" alt="Python Versions"></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Compatible-green.svg?style=for-the-badge" alt="MCP Compatible"></a>
+</p>
+
+---
+
+## 📦 Installation
 
 ```bash
 pip install codemind-okf
 ```
 
-## Quick Start
+---
 
-```bash
-# 1. Navigate to your project
-cd my-project
+## 🚀 Quick Usage
 
-# 2. Generate the OKF knowledge bundle (zero LLM cost — pure AST)
-codemind index .
-
-# 3. Drop AI IDE config files so Cursor/Antigravity/Copilot use the bundle
-codemind init
-
-# 4. Open your IDE — AI now reads .okf/index.md as its primary context!
-```
-
-## Commands
-
-### `codemind index <path>`
-Crawls and indexes a project into an `.okf/` knowledge bundle.
+### 1. `codemind index` — Index Any Project
+Crawls your project files using Tree-sitter & AST parsers to generate a `.okf/` knowledge bundle.
 
 ```bash
 codemind index .                         # Index current directory
 codemind index /path/to/project          # Index a specific directory
 codemind index . --lang python           # Only index Python files
-codemind index . --overwrite             # Re-index from scratch
+codemind index . --overwrite             # Force re-index from scratch
 ```
 
-### `codemind init`
-Drops AI IDE instruction files that tell Cursor, Antigravity, and Copilot to use `.okf/` as context.
+* **⚡ SHA-256 Incremental Indexing:** Remembers file hashes. Subsequent runs skip unchanged files in **0.05s**!
+
+---
+
+### 2. `codemind init` — Drop AI IDE Instructions
+Creates instruction files so Cursor, Antigravity, and GitHub Copilot use `.okf/index.md` as primary context.
 
 ```bash
 codemind init                            # Create all AI IDE config files
-codemind init --no-copilot              # Skip GitHub Copilot instructions
 ```
 
 **Files created:**
-| File | AI Tool |
+| File | Compatible Tool |
 |---|---|
-| `.cursorrules` | Cursor AI |
-| `.agents/AGENTS.md` | Antigravity IDE & compatible agents |
+| `.cursorrules` | Cursor AI IDE |
+| `.agents/AGENTS.md` | Antigravity IDE & Open Agents |
 | `.github/copilot-instructions.md` | GitHub Copilot |
 
-### `codemind status`
-Show the current bundle statistics.
+---
+
+### 3. `codemind audit` — Architecture & Health Audit
+Performs an architectural health check evaluating line density, docstring coverage, and layer separation.
 
 ```bash
-codemind status
-codemind status /path/to/project
+codemind audit                          # Health score (0-100 A+)
 ```
 
-### `codemind watch`
-Watches the project directory for real-time file changes and updates `.okf/` incrementally in milliseconds.
+---
+
+### 4. `codemind watch` — Real-Time Background File Watcher
+Watches the project directory for file saves and incrementally updates `.okf/` in under 50ms.
 
 ```bash
-codemind watch                          # Watch current directory
+codemind watch                          # Run watcher in background
 ```
 
-### `codemind audit`
-Performs an architectural health and code density audit of your codebase using your OKF bundle.
+---
+
+### 5. `codemind mcp` — Model Context Protocol (MCP) Server
+Launches the MCP server over STDIO. Connects CodeMind natively to **Cursor**, **Claude Desktop**, **Antigravity**, or **Zed**.
 
 ```bash
-codemind audit                          # Audit current project codebase
+codemind mcp
 ```
 
-### `codemind mcp`
-Launches the Model Context Protocol (MCP) server over STDIO.
+**Add to Cursor / Claude Desktop / Antigravity (`mcp.json`):**
 
-Connects CodeMind natively to **Cursor**, **Claude Desktop**, **Antigravity**, or **Zed**.
-
-**Add to Cursor / Claude Desktop (`mcp.json`):**
 ```json
 {
   "mcpServers": {
     "codemind": {
-      "command": "codemind",
-      "args": ["mcp"]
+      "command": "uvx",
+      "args": [
+        "--from",
+        "codemind-okf",
+        "codemind",
+        "mcp"
+      ]
     }
   }
 }
 ```
 
-Once configured, Cursor or Claude Desktop will automatically call CodeMind tools (`search_bundle`, `read_module`, `get_project_index`, `trace_dependencies`) whenever you ask questions about your codebase!
-
-
-## How It Works
-
-```
-Your Codebase  →  AST Parser  →  ModuleSummary  →  .okf/modules/*.md
-                                                    .okf/index.md
-                                                    .okf/log.md
-                                                           ↓
-                              AI IDE reads .cursorrules → reads .okf/index.md
-                              → understands full architecture instantly
-```
-
-All parsing is **deterministic and free** — no LLM calls, no API keys required.
-
-## Output Structure
-
-```
-.okf/
-├── index.md              ← Master architecture map (AI IDE reads this first)
-├── log.md                ← Generation audit trail
-└── modules/
-    ├── src-auth-router.md
-    ├── src-database-models.md
-    └── src-api-endpoints.md
-```
-
-Each module file contains structured YAML frontmatter:
-```yaml
 ---
-type: api
-title: Auth Router
-description: Handles user authentication endpoints including login, logout, and token refresh.
-resource: src/auth/auth_router.py
-tags:
-  - api
-  - auth
-  - fastapi
-key_functions:
-  - login
-  - logout
-  - refresh_token
-timestamp: 2025-07-23
+
+## 🔌 Exposed MCP Tools
+
+| MCP Tool | Description |
+|---|---|
+| 📚 `get_project_index` | Reads the master architecture map (`index.md`) |
+| 🔍 `search_bundle(query)` | Sub-word & token search across all project modules |
+| 📖 `read_module(slug)` | Reads specific module AST metadata & function signatures |
+| 🔗 `trace_dependencies(slug)` | Traces import graphs between components |
+| 📁 `list_bundles` | Discovers available `.okf/` knowledge bundles |
+
 ---
-```
 
-## Supported Languages
+## 📄 License
 
-- Python (`.py`) — Full AST analysis
-- JavaScript (`.js`, `.jsx`) — AST + regex parsing
-- TypeScript (`.ts`, `.tsx`) — AST + regex parsing
-
-## License
-
-MIT © CodeMind
+MIT License. See repository for details.

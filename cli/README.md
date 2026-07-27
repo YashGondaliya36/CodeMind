@@ -94,12 +94,24 @@ codemind mcp
 }
 ```
 
+### 6. `codemind memory` — Manage AI Persistent Memory Log (.okf/memory.md)
+Inspect, view, clear, or manually log memory entries to `.okf/memory.md`.
+
+```bash
+codemind memory show                     # Print full memory log
+codemind memory ls                       # Show entry summary by type
+codemind memory add "..." --type decision# Manually append memory entry
+codemind memory clear                    # Reset memory log
+```
+
 ---
 
 ## 🔌 Exposed MCP Tools
 
 | MCP Tool | Description |
 |---|---|
+| 🧠 `remember(content, type)` | **Persists AI decisions, tasks, context & bugs into `.okf/memory.md`** |
+| 🔄 `recall(query)` | **Retrieves relevant past memories at session start to eliminate context loss** |
 | 📚 `get_project_index` | Reads the master architecture map (`index.md`) |
 | 🔍 `search_bundle(query)` | Sub-word & token search across all project modules |
 | 📖 `read_module(slug)` | Reads specific module AST metadata & function signatures |
