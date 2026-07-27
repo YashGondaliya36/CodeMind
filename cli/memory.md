@@ -22,6 +22,12 @@ Used IsolationForest for Bot Shield detection with contamination rate 0.01
 ## ✅ Tasks
 <!-- AI appends task progress here -->
 
+### [2026-07-27 16:40 UTC] — Antigravity
+Implement geo-displacement anomaly scoring in v4  
+**Tags:** `bot_shield` `geo_displacement` `v4`
+
+---
+
 ## 💬 Context Snapshots
 <!-- AI appends working context here -->
 
