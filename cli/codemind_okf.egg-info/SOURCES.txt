@@ -13,6 +13,7 @@ codemind_okf/core/__init__.py
 codemind_okf/core/crawler.py
 codemind_okf/core/file_utils.py
 codemind_okf/core/index_builder.py
+codemind_okf/core/modes.py
 codemind_okf/core/parser.py
 codemind_okf/core/summarizer.py
 codemind_okf/core/writer.py
@@ -20,3 +21,8 @@ codemind_okf/templates/agents_md.txt
 codemind_okf/templates/copilot_instructions.txt
 codemind_okf/templates/cursorrules.txt
 codemind_okf/templates/github_action.yml
+codemind_okf/templates/modes/shared/debug.md
+codemind_okf/templates/modes/shared/execute.md
+codemind_okf/templates/modes/shared/plan.md
+codemind_okf/templates/modes/shared/review.md
+codemind_okf/templates/modes/shared/ship.md
